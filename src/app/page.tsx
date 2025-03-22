@@ -12,6 +12,7 @@ import {
   getAllClusterAnalyses,
   getAllClustersInfo,
   getUnbiasedEmbeddingsData,
+  getRemovedEmbeddingsData,
 } from "../api/apiClient";
 
 // Define interfaces for our API responses
@@ -79,6 +80,9 @@ export default function Home() {
   const [jobStatus, setJobStatus] = useState<string | null>(null);
   const [processingLog, setProcessingLog] = useState<string>("");
   const [embeddingsData, setEmbeddingsData] = useState<EmbeddingsData | null>(
+    null
+  );
+  const [removedEmbeddingsData, setRemovedEmbeddingsData] = useState<EmbeddingsData | null>(
     null
   );
 
@@ -328,19 +332,26 @@ export default function Home() {
   const handleFetchEmbeddingsInfo = async () => {
     setIsLoading(true);
     try {
-      console.log("Fetching unbiased embeddings info...");
-      const embeddings = (await getUnbiasedEmbeddingsData()) as EmbeddingsData;
+      // Fetch both embeddings in parallel
+      console.log("Fetching embeddings info...");
+      const [unbiasedEmbeddings, removedEmbeddings] = await Promise.all([
+        getUnbiasedEmbeddingsData(),
+        getRemovedEmbeddingsData()
+      ]);
 
       // Save embeddings to state
-      setEmbeddingsData(embeddings);
+      setEmbeddingsData(unbiasedEmbeddings as EmbeddingsData);
+      setRemovedEmbeddingsData(removedEmbeddings as EmbeddingsData);
 
       // Log detailed embeddings info to console
-      console.log("Unbiased embeddings info:", embeddings);
-      console.log(embeddings.embeddings);
+      console.log("Unbiased embeddings info:", unbiasedEmbeddings);
+      console.log("Removed embeddings info:", removedEmbeddings);
+      console.log("Unbiased embeddings:", (unbiasedEmbeddings as EmbeddingsData).embeddings);
+      console.log("Removed embeddings:", (removedEmbeddings as EmbeddingsData).embeddings);
 
-      return embeddings;
+      return { unbiasedEmbeddings, removedEmbeddings };
     } catch (error) {
-      console.error("Error fetching unbiased embeddings info:", error);
+      console.error("Error fetching embeddings info:", error);
     } finally {
       setIsLoading(false);
     }

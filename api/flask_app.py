@@ -105,6 +105,31 @@ def get_unbiased_embeddings_data():
     except Exception as e:
         return jsonify({"error": f"Error processing embeddings: {str(e)}"}), 500
 
+@app.route('/api/removed_embeddings_data', methods=['GET'])
+def get_removed_embeddings_data():
+    """Return the removed embeddings as JSON"""
+    file_path = "unbiased_dataset/removed_embeddings.npy"
+    if not os.path.exists(file_path):
+        return jsonify({"error": "Removed embeddings not found"}), 404
+    
+    try:
+        # Load the numpy array
+        embeddings = np.load(file_path)
+        
+        # Convert to list for JSON serialization
+        embeddings_list = embeddings.tolist()
+        
+        # Return the full embeddings data
+        return jsonify({
+            "success": True,
+            "embeddings": embeddings_list,
+            "shape": embeddings.shape,
+            "dimensions": embeddings.shape[1] if len(embeddings.shape) > 1 else 0,
+            "count": embeddings.shape[0]
+        })
+    except Exception as e:
+        return jsonify({"error": f"Error processing embeddings: {str(e)}"}), 500
+
 def get_paginated_dataset(file_path, dataset_name):
     """Helper function to return a paginated dataset"""
     # Get pagination parameters

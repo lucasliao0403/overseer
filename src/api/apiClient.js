@@ -375,4 +375,24 @@ export const fetchAllDatasetStats = async () => {
     console.error("Error fetching dataset stats:", error);
     return {};
   }
-}; 
+};
+
+/**
+ * Fetches the removed embeddings data for console logging
+ * @returns {Promise<Object>} The embeddings data
+ */
+export const getRemovedEmbeddingsData = async () => {
+    try {
+      const response = await fetch(getApiUrl("removed_embeddings_data"));
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to fetch removed embeddings: ${errorText}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error("Error fetching removed embeddings data:", error);
+      throw error;
+    }
+  }; 
