@@ -7,8 +7,10 @@ export default function SphereScene() {
   const isDraggingRef = useRef(false);
   const rotationRef = useRef({ x: 0, y: 0 });
   const previousMousePositionRef = useRef({ x: 0, y: 0 });
-  const [selectedVector, setSelectedVector] = useState<Vector6D | null>(null);
+  const [hoveredVector, setHoveredVector] = useState<Vector6D | null>(null);
   const didMoveRef = useRef(false);
+  const hoveredSphereRef = useRef<THREE.Mesh | null>(null);
+  const cameraPositionRef = useRef({ z: 8 });
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -24,7 +26,7 @@ export default function SphereScene() {
       0.1,
       1000
     );
-    camera.position.z = 8;
+    camera.position.z = cameraPositionRef.current.z;
 
     // Renderer setup
     const renderer = new THREE.WebGLRenderer({
@@ -38,12 +40,67 @@ export default function SphereScene() {
     const sphereGroup = new THREE.Group();
     scene.add(sphereGroup);
 
+    // Custom shader material definitions
+    const vertexShader = `
+      varying vec3 vNormal;
+      varying vec3 vPosition;
+      varying vec2 vUv;
+      uniform float time;
+      
+      void main() {
+        vNormal = normalize(normalMatrix * normal);
+        vPosition = position;
+        vUv = uv;
+        
+        // Add subtle vertex displacement for shimmer effect
+        vec3 newPosition = position + normal * sin(position.x * 10.0 + time * 2.0) * 0.01;
+        
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(newPosition, 1.0);
+      }
+    `;
+
+    const fragmentShader = `
+      varying vec3 vNormal;
+      varying vec3 vPosition;
+      varying vec2 vUv;
+      uniform vec3 baseColor;
+      uniform float time;
+      uniform bool isHovered;
+      
+      void main() {
+        // Calculate fresnel effect for edge highlighting
+        vec3 viewDirection = normalize(cameraPosition - vPosition);
+        float fresnel = pow(1.0 - dot(vNormal, viewDirection), 3.0);
+        
+        // Create shimmer effect
+        float shimmer = sin(vPosition.x * 20.0 + vPosition.y * 20.0 + vPosition.z * 20.0 + time * 3.0) * 0.5 + 0.5;
+        shimmer = pow(shimmer, 4.0) * 0.15;
+        
+        // Combine base color with effects
+        vec3 color = baseColor;
+        color += vec3(1.0, 1.0, 1.0) * fresnel * 0.3; // Edge highlight
+        color += vec3(1.0, 1.0, 1.0) * shimmer; // Shimmer
+        
+        // Add glow effect when hovered
+        if (isHovered) {
+          // Increase brightness and add pulsing glow
+          float pulse = sin(time * 5.0) * 0.5 + 0.5;
+          color = color * 1.5 + vec3(1.0, 1.0, 1.0) * pulse * 0.3;
+        }
+        
+        gl_FragColor = vec4(color, 1.0);
+      }
+    `;
+
+    // Clock for animation timing
+    const clock = new THREE.Clock();
+
     // Raycaster for clicking spheres
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
 
-    // Function to convert HSB to hex color
-    const hsbToHex = (h: number, s: number, b: number): number => {
+    // Function to convert HSB to RGB color
+    const hsbToRgb = (h: number, s: number, b: number): THREE.Vector3 => {
       // Convert HSB to RGB first
       h = h % 360;
       s = s / 100;
@@ -61,28 +118,39 @@ export default function SphereScene() {
       else if (h >= 240 && h < 300) { r = x; g = 0; b1 = c; }
       else { r = c; g = 0; b1 = x; }
       
-      r = Math.round((r + m) * 255);
-      g = Math.round((g + m) * 255);
-      b1 = Math.round((b1 + m) * 255);
+      r = r + m;
+      g = g + m;
+      b1 = b1 + m;
       
-      return (r << 16) | (g << 8) | b1;
+      return new THREE.Vector3(r, g, b1);
     };
 
     // Store vector data with each sphere
-    const spheresWithData: { sphere: THREE.Mesh; vector: Vector6D }[] = [];
+    const spheresWithData: { sphere: THREE.Mesh; vector: Vector6D; material: THREE.ShaderMaterial }[] = [];
 
     // Create spheres based on vector data
     vectors.forEach((vector: Vector6D) => {
       const geometry = new THREE.SphereGeometry(0.25, 32, 32);
-      const color = hsbToHex(vector[3], vector[4], vector[5]);
-      const material = new THREE.MeshBasicMaterial({ color });
+      const rgbColor = hsbToRgb(vector[3], vector[4], vector[5]);
+      
+      // Create shader material with uniforms
+      const material = new THREE.ShaderMaterial({
+        vertexShader,
+        fragmentShader,
+        uniforms: {
+          baseColor: { value: rgbColor },
+          time: { value: 0.0 },
+          isHovered: { value: false }
+        }
+      });
+      
       const sphere = new THREE.Mesh(geometry, material);
       
       // Position the sphere
       sphere.position.set(vector[0] * 2, vector[1] * 2, vector[2] * 2);
       
       sphereGroup.add(sphere);
-      spheresWithData.push({ sphere, vector });
+      spheresWithData.push({ sphere, vector, material });
     });
 
     // Handle window resize
@@ -126,18 +194,16 @@ export default function SphereScene() {
       
       // Apply min/max limits
       camera.position.z = Math.max(2, Math.min(15, camera.position.z));
+      
+      // Update the ref to keep track of camera position
+      cameraPositionRef.current.z = camera.position.z;
     };
     
     // Add wheel event listener
     window.addEventListener('wheel', handleWheel, { passive: false });
 
-    // Function to handle sphere clicks
-    const handleSphereClick = (event: MouseEvent) => {
-      if (didMoveRef.current) {
-        // User was dragging, not clicking
-        return;
-      }
-      
+    // Function to handle sphere hover
+    const handleSphereHover = (event: MouseEvent) => {
       const canvasElement = canvasRef.current;
       if (!canvasElement) return;
       
@@ -152,18 +218,31 @@ export default function SphereScene() {
       // Calculate objects intersecting the picking ray
       const intersects = raycaster.intersectObjects(sphereGroup.children);
       
+      // Reset previously hovered sphere if it exists
+      if (hoveredSphereRef.current) {
+        const prevHoveredData = spheresWithData.find(
+          item => item.sphere === hoveredSphereRef.current
+        );
+        if (prevHoveredData) {
+          prevHoveredData.material.uniforms.isHovered.value = false;
+        }
+        hoveredSphereRef.current = null;
+      }
+      
       if (intersects.length > 0) {
-        // Find the clicked sphere in our data array
-        const clickedSphere = spheresWithData.find(
+        // Find the hovered sphere in our data array
+        const hoveredSphere = spheresWithData.find(
           item => item.sphere === intersects[0].object
         );
         
-        if (clickedSphere) {
-          setSelectedVector(clickedSphere.vector);
+        if (hoveredSphere) {
+          setHoveredVector(hoveredSphere.vector);
+          hoveredSphereRef.current = hoveredSphere.sphere;
+          hoveredSphere.material.uniforms.isHovered.value = true;
         }
       } else {
-        // Clicked empty space, clear selection
-        setSelectedVector(null);
+        // Not hovering over any sphere, clear selection
+        setHoveredVector(null);
       }
     };
 
@@ -178,6 +257,9 @@ export default function SphereScene() {
     };
 
     const handleMouseMove = (event: MouseEvent) => {
+      // Always check for hover, regardless of dragging state
+      handleSphereHover(event);
+      
       if (!isDraggingRef.current) return;
       
       const deltaX = event.clientX - previousMousePositionRef.current.x;
@@ -197,10 +279,7 @@ export default function SphereScene() {
       };
     };
 
-    const handleMouseUp = (event: MouseEvent) => {
-      if (isDraggingRef.current && !didMoveRef.current) {
-        handleSphereClick(event);
-      }
+    const handleMouseUp = () => {
       isDraggingRef.current = false;
     };
 
@@ -217,6 +296,16 @@ export default function SphereScene() {
     };
 
     const handleTouchMove = (event: TouchEvent) => {
+      if (event.touches.length === 1) {
+        // Convert touch to mouse event for hover handling
+        const touch = event.touches[0];
+        const mouseEvent = new MouseEvent('mousemove', {
+          clientX: touch.clientX,
+          clientY: touch.clientY
+        });
+        handleSphereHover(mouseEvent);
+      }
+      
       if (!isDraggingRef.current || event.touches.length !== 1) return;
       
       const deltaX = event.touches[0].clientX - previousMousePositionRef.current.x;
@@ -244,7 +333,7 @@ export default function SphereScene() {
           clientX: touch.clientX,
           clientY: touch.clientY
         });
-        handleSphereClick(mouseEvent);
+        handleMouseUp();
       }
       isDraggingRef.current = false;
     };
@@ -257,11 +346,55 @@ export default function SphereScene() {
     window.addEventListener('touchmove', handleTouchMove);
     window.addEventListener('touchend', handleTouchEnd);
 
+    // Expose a function to reset camera and rotation
+    window.recenterCamera = () => {
+      // Store starting values for animation
+      const startRotX = rotationRef.current.x;
+      const startRotY = rotationRef.current.y;
+      const startZ = camera.position.z;
+      
+      // Target values
+      const targetRotX = 0;
+      const targetRotY = 0;
+      const targetZ = 8; // Default camera position
+      
+      const duration = 1000; // Animation duration in ms
+      const startTime = performance.now();
+      
+      const animateReset = (currentTime: number) => {
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        
+        // Use easeOutCubic for smooth animation
+        const easeProgress = 1 - Math.pow(1 - progress, 3);
+        
+        // Interpolate rotation
+        rotationRef.current.x = startRotX + (targetRotX - startRotX) * easeProgress;
+        rotationRef.current.y = startRotY + (targetRotY - startRotY) * easeProgress;
+        
+        // Interpolate camera position
+        camera.position.z = startZ + (targetZ - startZ) * easeProgress;
+        cameraPositionRef.current.z = camera.position.z;
+        
+        if (progress < 1) {
+          requestAnimationFrame(animateReset);
+        }
+      };
+      
+      requestAnimationFrame(animateReset);
+    };
+
     // Animation loop
     const animate = () => {
       requestAnimationFrame(animate);
       
-      // Apply rotation to the sphere group while preserving camera position
+      // Update time uniform for all shader materials
+      const elapsedTime = clock.getElapsedTime();
+      spheresWithData.forEach(({ material }) => {
+        material.uniforms.time.value = elapsedTime;
+      });
+      
+      // Apply rotation to the sphere group
       sphereGroup.rotation.x = rotationRef.current.x;
       sphereGroup.rotation.y = rotationRef.current.y;
       
@@ -271,6 +404,16 @@ export default function SphereScene() {
 
     // Cleanup function
     return () => {
+      // Reset hovered state
+      if (hoveredSphereRef.current) {
+        const hoveredData = spheresWithData.find(
+          item => item.sphere === hoveredSphereRef.current
+        );
+        if (hoveredData) {
+          hoveredData.material.uniforms.isHovered.value = false;
+        }
+      }
+      
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('mousedown', handleMouseDown);
       window.removeEventListener('mousemove', handleMouseMove);
@@ -289,8 +432,18 @@ export default function SphereScene() {
       });
       scene.remove(sphereGroup);
       renderer.dispose();
+
+      // Remove the global recenter function
+      delete window.recenterCamera;
     };
   }, []);
+
+  // Function to handle recenter button click
+  const handleRecenter = () => {
+    if (window.recenterCamera) {
+      window.recenterCamera();
+    }
+  };
 
   return (
     <main className="relative min-h-screen">
@@ -299,25 +452,34 @@ export default function SphereScene() {
         className="w-full h-full fixed top-0 left-0 -z-10 cursor-grab active:cursor-grabbing" 
       />
       
-      {selectedVector && (
+      {/* Recenter button */}
+      <button
+        onClick={handleRecenter}
+        className="absolute bottom-4 right-4 bg-white/90 px-4 py-2 rounded-lg shadow-lg border border-gray-200 text-gray-900 hover:bg-white transition-colors"
+      >
+        Recenter
+      </button>
+      
+      {hoveredVector && (
         <div className="absolute top-4 right-4 bg-white/90 p-4 rounded-lg shadow-lg border border-gray-200">
-          <h3 className="font-semibold mb-2">Vector Information</h3>
+          <h3 className="font-semibold mb-2 text-black">Vector Information</h3>
           <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-            <div>Position X:</div><div>{selectedVector[0]}</div>
-            <div>Position Y:</div><div>{selectedVector[1]}</div>
-            <div>Position Z:</div><div>{selectedVector[2]}</div>
-            <div>Hue:</div><div>{selectedVector[3]}°</div>
-            <div>Saturation:</div><div>{selectedVector[4]}%</div>
-            <div>Brightness:</div><div>{selectedVector[5]}%</div>
+            <div className="text-gray-900">Position X:</div><div className="text-gray-900">{hoveredVector[0]}</div>
+            <div className="text-gray-900">Position Y:</div><div className="text-gray-900">{hoveredVector[1]}</div>
+            <div className="text-gray-900">Position Z:</div><div className="text-gray-900">{hoveredVector[2]}</div>
+            <div className="text-gray-900">Hue:</div><div className="text-gray-900">{hoveredVector[3]}°</div>
+            <div className="text-gray-900">Saturation:</div><div className="text-gray-900">{hoveredVector[4]}%</div>
+            <div className="text-gray-900">Brightness:</div><div className="text-gray-900">{hoveredVector[5]}%</div>
           </div>
-          <button 
-            className="mt-2 px-2 py-1 bg-gray-200 hover:bg-gray-300 rounded text-sm w-full"
-            onClick={() => setSelectedVector(null)}
-          >
-            Close
-          </button>
         </div>
       )}
     </main>
   );
+}
+
+// Add the recenterCamera method to the Window interface
+declare global {
+  interface Window {
+    recenterCamera?: () => void;
+  }
 } 
