@@ -156,17 +156,17 @@ export const getAllClustersDataset = (page = 1, pageSize = 100) => {
  */
 export const getAllClustersInfo = async () => {
   try {
-    const response = await fetch(getApiUrl('clusters'));
+    const response = await fetch(getApiUrl("clusters"));
     
-    if (response.status === 404) {
-      console.warn("Clusters not found");
-      return {};
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to fetch cluster embeddings: ${errorText}`);
     }
     
     return await response.json();
   } catch (error) {
-    console.error("Error fetching clusters info:", error);
-    return {};
+    console.error("Error fetching cluster embeddings:", error);
+    throw error;
   }
 };
 

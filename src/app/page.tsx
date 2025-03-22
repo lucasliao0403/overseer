@@ -84,6 +84,7 @@ export default function Home() {
   );
   const [removedEmbeddingsData, setRemovedEmbeddingsData] =
     useState<EmbeddingsData | null>(null);
+  const [clusterData, setClusterData] = useState<any>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -107,9 +108,9 @@ export default function Home() {
     fetchData();
   }, []);
 
-  if (resumes) {
-    console.log(resumes);
-  }
+  // if (resumes) {
+  //   console.log(resumes);
+  // }
   if (summary) {
     console.log(summary);
   }
@@ -331,32 +332,48 @@ export default function Home() {
   const handleFetchEmbeddingsInfo = async () => {
     setIsLoading(true);
     try {
-      // Fetch both embeddings in parallel
-      console.log("Fetching embeddings info...");
-      const [unbiasedEmbeddings, removedEmbeddings] = await Promise.all([
-        getUnbiasedEmbeddingsData(),
-        getRemovedEmbeddingsData(),
-      ]);
+      // Fetch embeddings and clusters in parallel
+      console.log("Fetching embeddings and cluster info...");
+      const [unbiasedEmbeddings, removedEmbeddings, clusters] =
+        await Promise.all([
+          getUnbiasedEmbeddingsData(),
+          getRemovedEmbeddingsData(),
+          getAllClustersInfo(),
+        ]);
 
-      // Save embeddings to state
+      // Save data to state
       setEmbeddingsData(unbiasedEmbeddings as EmbeddingsData);
       setRemovedEmbeddingsData(removedEmbeddings as EmbeddingsData);
+      setClusterData(clusters as any);
 
-      // Log detailed embeddings info to console
-      console.log("Unbiased embeddings info:", unbiasedEmbeddings);
-      console.log("Removed embeddings info:", removedEmbeddings);
-      console.log(
-        "Unbiased embeddings:",
-        (unbiasedEmbeddings as EmbeddingsData).embeddings
-      );
-      console.log(
-        "Removed embeddings:",
-        (removedEmbeddings as EmbeddingsData).embeddings
+      // Log detailed info to console
+      console.log("Unbiased embeddings:", unbiasedEmbeddings);
+      console.log("Removed embeddings:", removedEmbeddings);
+
+      // More detailed logging of cluster data
+      console.log("Cluster data:", clusters);
+
+      // Log cluster structure details
+      if (clusters && typeof clusters === "object") {
+        const clusterInfo = clusters as ClustersInfoResponse;
+
+        if (clusterInfo.clusters) {
+          console.log(
+            "Number of clusters:",
+            Object.keys(clusterInfo.clusters).length
+          );
+        }
+      }
+
+      // Show success message
+      alert(
+        `Successfully fetched embeddings and clusters data. Check the console.`
       );
 
-      return { unbiasedEmbeddings, removedEmbeddings };
+      return { unbiasedEmbeddings, removedEmbeddings, clusters };
     } catch (error) {
-      console.error("Error fetching embeddings info:", error);
+      console.error("Error fetching data:", error);
+      alert("Error fetching data. See console for details.");
     } finally {
       setIsLoading(false);
     }
@@ -368,6 +385,7 @@ export default function Home() {
         unbiasedEmbeddings={embeddingsData}
         removedEmbeddings={removedEmbeddingsData}
         activeTab={activeTab}
+        clusterData={clusterData}
       />
 
       {/* Navigation Tabs */}

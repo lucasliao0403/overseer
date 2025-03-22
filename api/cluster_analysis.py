@@ -5,6 +5,8 @@ from dotenv import load_dotenv
 import json
 from pathlib import Path
 import numpy as np
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
 
 # Load environment variables from .env file
 load_dotenv()
@@ -79,7 +81,7 @@ def analyze_cluster(cluster_df, cluster_num):
 
 def save_cluster_embeddings(cluster_df, cluster_num, clusters_dir):
     """
-    Save embeddings for resumes in this cluster.
+    Save embeddings for resumes in this cluster and convert to 6D using PCA.
     
     Args:
         cluster_df: DataFrame containing the cluster data
@@ -118,7 +120,7 @@ def save_cluster_embeddings(cluster_df, cluster_num, clusters_dir):
     # Extract embeddings for this cluster
     cluster_embeddings = all_embeddings[valid_indices]
     
-    # Prepare data for JSON serialization
+    # Save full-dimensional embeddings
     embeddings_data = {
         "cluster_id": cluster_num,
         "total_embeddings": len(valid_indices),
@@ -138,7 +140,48 @@ def save_cluster_embeddings(cluster_df, cluster_num, clusters_dir):
     with open(embeddings_file, 'w') as f:
         json.dump(embeddings_data, f)
     
-    print(f"  Saved {len(valid_indices)} embeddings to {embeddings_file}")
+    print(f"  Saved {len(valid_indices)} full-dimensional embeddings to {embeddings_file}")
+    
+    # Now reduce to 6D with PCA
+    # First standardize the data
+    scaler = StandardScaler()
+    scaled_embeddings = scaler.fit_transform(cluster_embeddings)
+    
+    # Apply PCA
+    pca = PCA(n_components=6)
+    embeddings_6d = pca.fit_transform(scaled_embeddings)
+    
+    # Create data structure for 6D embeddings
+    embeddings_6d_data = {
+        "cluster_id": cluster_num,
+        "total_embeddings": len(valid_indices),
+        "dimensions": 6,
+        "embeddings": [
+            {
+                "id": i,
+                "resume_id": int(resume_id),
+                "cluster_id": cluster_num,
+                "embedding": embedding.tolist()
+            }
+            for i, (resume_id, embedding) in enumerate(zip(valid_indices, embeddings_6d))
+        ]
+    }
+    
+    # Save 6D embeddings to a separate JSON file
+    embeddings_6d_file = clusters_dir / f"cluster_{cluster_num}_embeddings_6d.json"
+    with open(embeddings_6d_file, 'w') as f:
+        json.dump(embeddings_6d_data, f)
+    
+    # Also save as NPY for more efficient loading
+    embeddings_6d_npy_file = clusters_dir / f"cluster_{cluster_num}_embeddings_6d.npy"
+    np.save(embeddings_6d_npy_file, embeddings_6d)
+    
+    print(f"  Saved {len(valid_indices)} 6D embeddings to {embeddings_6d_file} and {embeddings_6d_npy_file}")
+    
+    # Calculate and print explained variance
+    explained_variance = sum(pca.explained_variance_ratio_) * 100
+    print(f"  PCA explained variance with 6 components: {explained_variance:.2f}%")
+    
     return embeddings_file
 
 def export_complete_dataset(cluster_files):
@@ -245,7 +288,7 @@ def main():
         cluster_df = pd.read_csv(cluster_file)
         print(f"  Cluster size: {len(cluster_df)} resumes")
         
-        # CRITICAL NEW FEATURE: Save embeddings for this cluster
+        # Save embeddings for this cluster (now includes 6D conversion)
         save_cluster_embeddings(cluster_df, cluster_num, clusters_dir)
         
         # Analyze the cluster

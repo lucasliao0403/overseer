@@ -175,40 +175,61 @@ def get_paginated_dataset(file_path, dataset_name):
 
 @app.route('/api/clusters', methods=['GET'])
 def get_clusters():
-    """Return all clusters"""
+    """Return embeddings for all clusters"""
+    # First check if clusters directory exists
     clusters_dir = Path("clusters")
     if not clusters_dir.exists():
         return jsonify({"error": "Clusters directory not found"}), 404
     
-    cluster_files = list(clusters_dir.glob("cluster_*.csv"))
-    if not cluster_files:
-        return jsonify({"error": "No cluster files found"}), 404
+    # Look for 6D embedding files instead of CSV files
+    embedding_files = list(clusters_dir.glob("cluster_*_embeddings_6d.npy"))
     
-    # Get pagination parameters
-    page = request.args.get('page', default=1, type=int)
-    page_size = request.args.get('page_size', default=100, type=int)
+    # If no embedding files found, try looking in unbiased_dataset directory
+    if not embedding_files:
+        embedding_files = list(Path("unbiased_dataset").glob("cluster_*_embeddings_6d.npy"))
     
-    # Limit page_size
-    page_size = min(page_size, 1000)
+    if not embedding_files:
+        return jsonify({"error": "No cluster embedding files found"}), 404
     
     try:
         all_clusters = {}
         
-        for cluster_file in cluster_files:
-            cluster_id = int(cluster_file.stem.split("_")[1])
-            df = pd.read_csv(cluster_file)
-            all_clusters[f"cluster_{cluster_id}"] = {
-                "total_records": len(df),
-                "sample": df.head(5).to_dict('records')  # Include a small sample
-            }
+        for embedding_file in embedding_files:
+            # Extract cluster number from filename (cluster_1_embeddings_6d.npy -> 1)
+            file_name = embedding_file.stem
+            parts = file_name.split("_")
+            if len(parts) >= 2:
+                cluster_id = int(parts[1])
+            else:
+                continue  # Skip if filename format is unexpected
+                
+            # Load the embeddings
+            try:
+                embeddings = np.load(embedding_file)
+                
+                # Convert to list for JSON serialization
+                embeddings_list = embeddings.tolist()
+                
+                # Store metadata about the embeddings
+                all_clusters[f"cluster_{cluster_id}"] = {
+                    "count": len(embeddings),
+                    "dimensions": embeddings.shape[1] if len(embeddings.shape) > 1 else 0,
+                    "embeddings": embeddings_list
+                }
+            except Exception as e:
+                print(f"Error loading embeddings for cluster {cluster_id}: {str(e)}")
+                continue
         
+        if not all_clusters:
+            return jsonify({"error": "Failed to load any cluster embeddings"}), 500
+            
         return jsonify({
             "total_clusters": len(all_clusters),
             "clusters": all_clusters
         })
     
     except Exception as e:
-        return jsonify({"error": f"Error reading clusters: {str(e)}"}), 500
+        return jsonify({"error": f"Error reading cluster embeddings: {str(e)}"}), 500
 
 @app.route('/api/clusters/<cluster_id>', methods=['GET'])
 def get_cluster(cluster_id):
@@ -243,28 +264,28 @@ def get_all_cluster_analyses():
     except Exception as e:
         return jsonify({"error": f"Error reading analyses: {str(e)}"}), 500
 
-@app.route('/api/analysis/clusters/<cluster_id>', methods=['GET'])
-def get_cluster_analysis(cluster_id):
-    """Return the analysis for a specific cluster"""
-    try:
-        cluster_id = int(cluster_id)
-        file_path = f"cluster_analysis/cluster_{cluster_id}_analysis.txt"
+# @app.route('/api/analysis/clusters/<cluster_id>', methods=['GET'])
+# def get_cluster_analysis(cluster_id):
+#     """Return the analysis for a specific cluster"""
+#     try:
+#         cluster_id = int(cluster_id)
+#         file_path = f"cluster_analysis/cluster_{cluster_id}_analysis.txt"
         
-        if not os.path.exists(file_path):
-            return jsonify({"error": f"Analysis for cluster {cluster_id} not found"}), 404
+#         if not os.path.exists(file_path):
+#             return jsonify({"error": f"Analysis for cluster {cluster_id} not found"}), 404
         
-        with open(file_path, 'r') as f:
-            analysis = f.read()
+#         with open(file_path, 'r') as f:
+#             analysis = f.read()
         
-        return jsonify({
-            "cluster_id": cluster_id,
-            "analysis": analysis
-        })
+#         return jsonify({
+#             "cluster_id": cluster_id,
+#             "analysis": analysis
+#         })
     
-    except ValueError:
-        return jsonify({"error": "Cluster ID must be a number"}), 400
-    except Exception as e:
-        return jsonify({"error": f"Error reading analysis: {str(e)}"}), 500
+#     except ValueError:
+#         return jsonify({"error": "Cluster ID must be a number"}), 400
+#     except Exception as e:
+#         return jsonify({"error": f"Error reading analysis: {str(e)}"}), 500
 
 @app.route('/api/summary', methods=['GET'])
 def get_unbiasing_summary():
