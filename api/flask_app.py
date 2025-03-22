@@ -2,11 +2,18 @@ from flask import Flask, jsonify, request, send_file
 import pandas as pd
 import os
 import json
+import subprocess
 from pathlib import Path
 from flask_cors import CORS  # Import CORS
+import uuid
+import shutil
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
+
+# Create uploads directory if it doesn't exist
+UPLOAD_FOLDER = Path("uploads")
+UPLOAD_FOLDER.mkdir(exist_ok=True)
 
 @app.route('/')
 def index():
@@ -252,6 +259,101 @@ def download_file(file_type):
         return send_file(file_path, as_attachment=True)
     except Exception as e:
         return jsonify({"error": f"Error downloading file: {str(e)}"}), 500
+
+# Add file upload endpoint
+@app.route('/api/upload', methods=['POST'])
+def upload_file():
+    """
+    Upload a CSV file to use as the dataset for the analysis pipeline
+    """
+    if 'file' not in request.files:
+        return jsonify({"error": "No file part in the request"}), 400
+        
+    file = request.files['file']
+    
+    if file.filename == '':
+        return jsonify({"error": "No file selected"}), 400
+        
+    if not file.filename.endswith('.csv'):
+        return jsonify({"error": "Only CSV files are supported"}), 400
+    
+    # Create a unique ID for this upload
+    upload_id = str(uuid.uuid4())
+    upload_dir = UPLOAD_FOLDER / upload_id
+    upload_dir.mkdir(exist_ok=True)
+    
+    # Save the uploaded file
+    file_path = upload_dir / "Resume.csv"
+    file.save(file_path)
+    
+    try:
+        # Validate the CSV file
+        df = pd.read_csv(file_path)
+        if 'Resume_str' not in df.columns:
+            return jsonify({
+                "error": "Invalid CSV format. The file must contain a 'Resume_str' column."
+            }), 400
+            
+        rows_count = len(df)
+        
+        # Run the pipeline asynchronously
+        # This will be a non-blocking call
+        subprocess.Popen(
+            ["python", "api/main.py", "--input", str(file_path), "--job_id", upload_id],
+            # Redirect output to a log file
+            stdout=open(upload_dir / "pipeline.log", "w"),
+            stderr=subprocess.STDOUT
+        )
+        
+        return jsonify({
+            "message": "File uploaded successfully. Processing started.",
+            "job_id": upload_id,
+            "rows_count": rows_count,
+            "status": "processing"
+        })
+        
+    except Exception as e:
+        # Clean up on error
+        shutil.rmtree(upload_dir, ignore_errors=True)
+        return jsonify({"error": f"Error processing file: {str(e)}"}), 500
+
+@app.route('/api/jobs/<job_id>/status', methods=['GET'])
+def get_job_status(job_id):
+    """Check the status of a processing job"""
+    job_dir = UPLOAD_FOLDER / job_id
+    
+    if not job_dir.exists():
+        return jsonify({"error": "Job not found"}), 404
+    
+    # Check for completion indicators
+    completed = (job_dir / "completed").exists()
+    failed = (job_dir / "failed").exists()
+    
+    # Get log contents if available
+    log_path = job_dir / "pipeline.log"
+    log_content = ""
+    if log_path.exists():
+        with open(log_path, "r") as f:
+            log_content = f.read()
+    
+    if completed:
+        return jsonify({
+            "job_id": job_id,
+            "status": "completed",
+            "log": log_content
+        })
+    elif failed:
+        return jsonify({
+            "job_id": job_id,
+            "status": "failed",
+            "log": log_content
+        })
+    else:
+        return jsonify({
+            "job_id": job_id,
+            "status": "processing",
+            "log": log_content
+        })
 
 if __name__ == '__main__':
     # Run the Flask app

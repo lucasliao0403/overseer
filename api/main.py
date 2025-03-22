@@ -4,19 +4,36 @@ import pandas as pd
 from pathlib import Path
 import time
 import sys
+import argparse
+import shutil
 
 # Import functions from our other files
 from embeddings import main as embeddings_main
 from cluster_analysis import main as cluster_analysis_main
 from create_unbiased_dataset import create_unbiased_dataset
 
+# Setup argument parser
+def parse_args():
+    parser = argparse.ArgumentParser(description="Unbiasing pipeline")
+    parser.add_argument("--input", type=str, help="Path to input CSV file")
+    parser.add_argument("--job_id", type=str, help="Job ID for this processing task")
+    return parser.parse_args()
+
 # Setup logging
-def setup_logging():
+def setup_logging(job_id=None):
     log_dir = Path("logs")
     log_dir.mkdir(exist_ok=True)
     
     timestamp = time.strftime("%Y%m%d-%H%M%S")
-    log_file = log_dir / f"unbiasing_pipeline_{timestamp}.log"
+    
+    if job_id:
+        # Use job_id for the log filename
+        log_file = log_dir / f"unbiasing_pipeline_{job_id}.log"
+        # Also create a symbolic link to the job directory
+        job_dir = Path("uploads") / job_id
+        job_log_file = job_dir / "pipeline.log"
+    else:
+        log_file = log_dir / f"unbiasing_pipeline_{timestamp}.log"
     
     # Configure logging to write to both file and console
     logging.basicConfig(
@@ -66,19 +83,38 @@ def report_file_info(file_path):
 
 def main():
     """Main function to execute the entire unbiasing pipeline"""
+    # Parse command-line arguments
+    args = parse_args()
+    
     # Setup logging
-    log_file = setup_logging()
+    log_file = setup_logging(args.job_id)
     
     try:
+        # Set the input file path
+        input_file = args.input
+        job_id = args.job_id
+        
+        if input_file:
+            logging.info(f"Using custom input file: {input_file}")
+        else:
+            logging.info("No input file specified, will use default dataset")
+        
+        # Create job completion marker if job_id is provided
+        job_dir = None
+        if job_id:
+            job_dir = Path("uploads") / job_id
+            
         # Step 1: Generate embeddings and find clusters
         logging.info("=" * 80)
         logging.info("STEP 1: GENERATING EMBEDDINGS AND FINDING CLUSTERS")
         logging.info("=" * 80)
         
-        df, embeddings = embeddings_main()
+        df, embeddings = embeddings_main(input_file)
         
         if df is None or embeddings is None:
             logging.error("Failed to generate embeddings. Exiting.")
+            if job_dir:
+                (job_dir / "failed").touch()
             return
         
         logging.info(f"Embeddings shape: {embeddings.shape}")
@@ -130,8 +166,15 @@ def main():
         
         logging.info("Unbiasing pipeline completed successfully!")
         
+        # Create completion marker if job_id is provided
+        if job_dir:
+            (job_dir / "completed").touch()
+        
     except Exception as e:
         logging.error(f"Error in pipeline: {str(e)}", exc_info=True)
+        # Create failure marker if job_id is provided
+        if job_id and job_dir:
+            (job_dir / "failed").touch()
     
     logging.info(f"Complete log available at: {log_file}")
 

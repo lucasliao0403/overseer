@@ -124,19 +124,20 @@ def save_clusters_to_csv(df, cluster_indices, output_dir="clusters"):
     combined_df.to_csv(combined_file, index=False)
     print(f"Saved combined file with all clusters to {combined_file}")
 
-def main():
+def main(input_file=None):
     # Load the resume dataset
     print("Loading resume dataset...")
     try:
-        df = pd.read_csv("hf://datasets/sankar12345/Resume-Dataset/Resume.csv")
-    except Exception as e:
-        print(f"Error loading dataset from Hugging Face: {e}")
-        print("Trying local file...")
-        try:
-            df = pd.read_csv("Resume.csv")
-        except Exception as e2:
-            print(f"Error loading local file: {e2}")
+        if input_file and os.path.exists(input_file):
+            print(f"Loading custom dataset from {input_file}")
+            df = pd.read_csv(input_file)
+        else:
+            # No fallback to default dataset - just error out
+            print("Error: No input file provided or file does not exist")
             return None, None
+    except Exception as e:
+        print(f"Error loading dataset: {e}")
+        return None, None
     
     # Print dataset information
     print("DataFrame shape:", df.shape)

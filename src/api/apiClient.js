@@ -1,17 +1,72 @@
 // API client for interacting with the backend
 const API_BASE_URL = "http://localhost:3001/api";
 
+// Ensure we don't have trailing slashes that might cause double-slash issues
+const getApiUrl = (endpoint) => {
+  // Remove any leading slash from the endpoint to avoid double slashes
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint.substring(1) : endpoint;
+  return `${API_BASE_URL}/${cleanEndpoint}`;
+};
+
 /**
  * Check if the API is running
  * @returns {Promise<Object>} Status information
  */
 export const getApiStatus = async () => {
   try {
-    const response = await fetch(`${API_BASE_URL}/health`);
+    const response = await fetch(getApiUrl('health'));
     return await response.json();
   } catch (error) {
     console.error("Error checking API status:", error);
     return { status: "error", message: error.message };
+  }
+};
+
+/**
+ * Upload a CSV file to use as the dataset for unbiasing
+ * @param {File} file - The CSV file to upload
+ * @returns {Promise<Object>} Upload result with job ID
+ */
+export const uploadDataset = async (file) => {
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    const response = await fetch(getApiUrl('upload'), {
+      method: 'POST',
+      body: formData,
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Upload failed');
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error("Error uploading dataset:", error);
+    throw error;
+  }
+};
+
+/**
+ * Check the status of a processing job
+ * @param {string} jobId - The job ID to check
+ * @returns {Promise<Object>} Job status information
+ */
+export const getJobStatus = async (jobId) => {
+  try {
+    const response = await fetch(getApiUrl(`jobs/${jobId}/status`));
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to get job status');
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error(`Error getting job status for ${jobId}:`, error);
+    throw error;
   }
 };
 
@@ -21,7 +76,7 @@ export const getApiStatus = async () => {
  */
 export const getAvailableDatasets = async () => {
   try {
-    const response = await fetch(`${API_BASE_URL}/datasets/available`);
+    const response = await fetch(getApiUrl('datasets/available'));
     return await response.json();
   } catch (error) {
     console.error("Error fetching available datasets:", error);
@@ -38,7 +93,7 @@ export const getAvailableDatasets = async () => {
  */
 export const fetchPaginatedDataset = async (endpoint, page = 1, pageSize = 100) => {
   try {
-    const url = new URL(`${API_BASE_URL}/${endpoint}`);
+    const url = new URL(getApiUrl(endpoint));
     url.searchParams.append("page", page);
     url.searchParams.append("page_size", pageSize);
     
@@ -101,7 +156,7 @@ export const getAllClustersDataset = (page = 1, pageSize = 100) => {
  */
 export const getAllClustersInfo = async () => {
   try {
-    const response = await fetch(`${API_BASE_URL}/clusters`);
+    const response = await fetch(getApiUrl('clusters'));
     
     if (response.status === 404) {
       console.warn("Clusters not found");
@@ -124,7 +179,7 @@ export const getAllClustersInfo = async () => {
  */
 export const getCluster = async (clusterId, page = 1, pageSize = 100) => {
   try {
-    const url = new URL(`${API_BASE_URL}/clusters/${clusterId}`);
+    const url = new URL(getApiUrl(`clusters/${clusterId}`));
     url.searchParams.append("page", page);
     url.searchParams.append("page_size", pageSize);
     
@@ -148,7 +203,7 @@ export const getCluster = async (clusterId, page = 1, pageSize = 100) => {
  */
 export const getAllClusterAnalyses = async () => {
   try {
-    const response = await fetch(`${API_BASE_URL}/analysis/clusters`);
+    const response = await fetch(getApiUrl('analysis/clusters'));
     
     if (response.status === 404) {
       console.warn("Cluster analyses not found");
@@ -169,7 +224,7 @@ export const getAllClusterAnalyses = async () => {
  */
 export const getClusterAnalysis = async (clusterId) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/analysis/clusters/${clusterId}`);
+    const response = await fetch(getApiUrl(`analysis/clusters/${clusterId}`));
     
     if (response.status === 404) {
       console.warn(`Analysis for cluster ${clusterId} not found`);
@@ -189,7 +244,7 @@ export const getClusterAnalysis = async (clusterId) => {
  */
 export const getUnbiasingSummary = async () => {
   try {
-    const response = await fetch(`${API_BASE_URL}/summary`);
+    const response = await fetch(getApiUrl('summary'));
     
     if (response.status === 404) {
       console.warn("Unbiasing summary not found");
@@ -210,7 +265,7 @@ export const getUnbiasingSummary = async () => {
  */
 export const downloadFile = async (fileType) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/download/${fileType}`);
+    const response = await fetch(getApiUrl(`download/${fileType}`));
     
     if (response.status === 404) {
       console.warn(`File ${fileType} not found`);
