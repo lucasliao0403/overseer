@@ -64,3 +64,8 @@ clusters/
 logs/
 unbiased_dataset/
 *.pyc
+__pycache__/
+
+# Specific files to ignore
+api/cluster_analysis/all_clusters_analysis.json
+
