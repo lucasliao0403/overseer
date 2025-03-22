@@ -82,9 +82,8 @@ export default function Home() {
   const [embeddingsData, setEmbeddingsData] = useState<EmbeddingsData | null>(
     null
   );
-  const [removedEmbeddingsData, setRemovedEmbeddingsData] = useState<EmbeddingsData | null>(
-    null
-  );
+  const [removedEmbeddingsData, setRemovedEmbeddingsData] =
+    useState<EmbeddingsData | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -336,7 +335,7 @@ export default function Home() {
       console.log("Fetching embeddings info...");
       const [unbiasedEmbeddings, removedEmbeddings] = await Promise.all([
         getUnbiasedEmbeddingsData(),
-        getRemovedEmbeddingsData()
+        getRemovedEmbeddingsData(),
       ]);
 
       // Save embeddings to state
@@ -346,8 +345,14 @@ export default function Home() {
       // Log detailed embeddings info to console
       console.log("Unbiased embeddings info:", unbiasedEmbeddings);
       console.log("Removed embeddings info:", removedEmbeddings);
-      console.log("Unbiased embeddings:", (unbiasedEmbeddings as EmbeddingsData).embeddings);
-      console.log("Removed embeddings:", (removedEmbeddings as EmbeddingsData).embeddings);
+      console.log(
+        "Unbiased embeddings:",
+        (unbiasedEmbeddings as EmbeddingsData).embeddings
+      );
+      console.log(
+        "Removed embeddings:",
+        (removedEmbeddings as EmbeddingsData).embeddings
+      );
 
       return { unbiasedEmbeddings, removedEmbeddings };
     } catch (error) {
@@ -359,7 +364,10 @@ export default function Home() {
 
   return (
     <main className="relative min-h-screen">
-      <SphereScene />
+      <SphereScene
+        unbiasedEmbeddings={embeddingsData}
+        removedEmbeddings={removedEmbeddingsData}
+      />
 
       {/* Navigation Tabs */}
       <div className="fixed top-8 left-1/2 transform -translate-x-1/2 z-20">
