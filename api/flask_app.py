@@ -3,8 +3,10 @@ import pandas as pd
 import os
 import json
 from pathlib import Path
+from flask_cors import CORS  # Import CORS
 
 app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
 
 @app.route('/')
 def index():
@@ -253,4 +255,4 @@ def download_file(file_type):
 
 if __name__ == '__main__':
     # Run the Flask app
-    app.run(debug=True, host='0.0.0.0', port=3000) 
+    app.run(debug=True, host='0.0.0.0', port=3001) 

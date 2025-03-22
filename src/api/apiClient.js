@@ -1,0 +1,303 @@
+// API client for interacting with the backend
+const API_BASE_URL = "http://localhost:3001/api";
+
+/**
+ * Check if the API is running
+ * @returns {Promise<Object>} Status information
+ */
+export const getApiStatus = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/health`);
+    return await response.json();
+  } catch (error) {
+    console.error("Error checking API status:", error);
+    return { status: "error", message: error.message };
+  }
+};
+
+/**
+ * Get information about which datasets are available
+ * @returns {Promise<Object>} Available datasets information
+ */
+export const getAvailableDatasets = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/datasets/available`);
+    return await response.json();
+  } catch (error) {
+    console.error("Error fetching available datasets:", error);
+    return {};
+  }
+};
+
+/**
+ * Fetch a page of data from any paginated dataset endpoint
+ * @param {string} endpoint - API endpoint path without the base URL
+ * @param {number} page - Page number (default: 1)
+ * @param {number} pageSize - Number of records per page (default: 100)
+ * @returns {Promise<Object>} Paginated data
+ */
+export const fetchPaginatedDataset = async (endpoint, page = 1, pageSize = 100) => {
+  try {
+    const url = new URL(`${API_BASE_URL}/${endpoint}`);
+    url.searchParams.append("page", page);
+    url.searchParams.append("page_size", pageSize);
+    
+    const response = await fetch(url);
+    
+    if (response.status === 404) {
+      console.warn(`Dataset not found: ${endpoint}`);
+      return {};
+    }
+    return await response.json();
+  } catch (error) {
+    console.error(`Error fetching ${endpoint}:`, error);
+    return {};
+  }
+};
+
+/**
+ * Get a page of the cleaned resumes dataset
+ * @param {number} page - Page number
+ * @param {number} pageSize - Number of records per page
+ * @returns {Promise<Object>} Paginated data
+ */
+export const getCleanedResumes = (page = 1, pageSize = 100) => {
+  return fetchPaginatedDataset("cleaned_resumes", page, pageSize);
+};
+
+/**
+ * Get a page of the unbiased resumes dataset
+ * @param {number} page - Page number
+ * @param {number} pageSize - Number of records per page
+ * @returns {Promise<Object>} Paginated data
+ */
+export const getUnbiasedResumes = (page = 1, pageSize = 100) => {
+  return fetchPaginatedDataset("unbiased_resumes", page, pageSize);
+};
+
+/**
+ * Get a page of the removed entries dataset
+ * @param {number} page - Page number
+ * @param {number} pageSize - Number of records per page
+ * @returns {Promise<Object>} Paginated data
+ */
+export const getRemovedEntries = (page = 1, pageSize = 100) => {
+  return fetchPaginatedDataset("removed_entries", page, pageSize);
+};
+
+/**
+ * Get a page of the all_clusters dataset
+ * @param {number} page - Page number
+ * @param {number} pageSize - Number of records per page
+ * @returns {Promise<Object>} Paginated data
+ */
+export const getAllClustersDataset = (page = 1, pageSize = 100) => {
+  return fetchPaginatedDataset("all_clusters", page, pageSize);
+};
+
+/**
+ * Get information about all clusters
+ * @returns {Promise<Object>} All clusters information
+ */
+export const getAllClustersInfo = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/clusters`);
+    
+    if (response.status === 404) {
+      console.warn("Clusters not found");
+      return {};
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error("Error fetching clusters info:", error);
+    return {};
+  }
+};
+
+/**
+ * Get a specific cluster by ID
+ * @param {number} clusterId - Cluster ID
+ * @param {number} page - Page number
+ * @param {number} pageSize - Number of records per page
+ * @returns {Promise<Object>} Cluster data
+ */
+export const getCluster = async (clusterId, page = 1, pageSize = 100) => {
+  try {
+    const url = new URL(`${API_BASE_URL}/clusters/${clusterId}`);
+    url.searchParams.append("page", page);
+    url.searchParams.append("page_size", pageSize);
+    
+    const response = await fetch(url);
+    
+    if (response.status === 404) {
+      console.warn(`Cluster ${clusterId} not found`);
+      return {};
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error(`Error fetching cluster ${clusterId}:`, error);
+    return {};
+  }
+};
+
+/**
+ * Get all cluster analyses
+ * @returns {Promise<Object>} All analyses
+ */
+export const getAllClusterAnalyses = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/analysis/clusters`);
+    
+    if (response.status === 404) {
+      console.warn("Cluster analyses not found");
+      return {};
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error("Error fetching cluster analyses:", error);
+    return {};
+  }
+};
+
+/**
+ * Get analysis for a specific cluster
+ * @param {number} clusterId - Cluster ID
+ * @returns {Promise<Object>} Cluster analysis
+ */
+export const getClusterAnalysis = async (clusterId) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/analysis/clusters/${clusterId}`);
+    
+    if (response.status === 404) {
+      console.warn(`Analysis for cluster ${clusterId} not found`);
+      return {};
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error(`Error fetching analysis for cluster ${clusterId}:`, error);
+    return {};
+  }
+};
+
+/**
+ * Get the unbiasing summary
+ * @returns {Promise<Object>} Unbiasing summary
+ */
+export const getUnbiasingSummary = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/summary`);
+    
+    if (response.status === 404) {
+      console.warn("Unbiasing summary not found");
+      return {};
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error("Error fetching unbiasing summary:", error);
+    return {};
+  }
+};
+
+/**
+ * Download a file from the API
+ * @param {string} fileType - Type of file to download (e.g., "cleaned_resumes", "unbiased_resumes")
+ * @returns {Promise<Blob>} File blob that can be saved using FileSaver or similar
+ */
+export const downloadFile = async (fileType) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/download/${fileType}`);
+    
+    if (response.status === 404) {
+      console.warn(`File ${fileType} not found`);
+      return null;
+    }
+    
+    return await response.blob();
+  } catch (error) {
+    console.error(`Error downloading ${fileType}:`, error);
+    return null;
+  }
+};
+
+/**
+ * Save a blob as a file in the browser
+ * @param {Blob} blob - File blob
+ * @param {string} filename - Filename to save as
+ */
+export const saveFile = (blob, filename) => {
+  if (!blob) return;
+  
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.style.display = 'none';
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  window.URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+};
+
+/**
+ * Fetch all dataset statistics
+ * @returns {Promise<Object>} Statistics for all available datasets
+ */
+export const fetchAllDatasetStats = async () => {
+  try {
+    const available = await getAvailableDatasets();
+    const stats = {};
+    
+    if (available.cleaned_resumes) {
+      const data = await getCleanedResumes(1, 1);
+      stats.cleanedResumes = {
+        totalRecords: data.total_records || 0,
+        totalPages: data.total_pages || 0
+      };
+    }
+    
+    if (available.unbiased_resumes) {
+      const data = await getUnbiasedResumes(1, 1);
+      stats.unbiasedResumes = {
+        totalRecords: data.total_records || 0,
+        totalPages: data.total_pages || 0
+      };
+    }
+    
+    if (available.removed_entries) {
+      const data = await getRemovedEntries(1, 1);
+      stats.removedEntries = {
+        totalRecords: data.total_records || 0,
+        totalPages: data.total_pages || 0
+      };
+    }
+    
+    if (available.all_clusters) {
+      const data = await getAllClustersDataset(1, 1);
+      stats.allClusters = {
+        totalRecords: data.total_records || 0,
+        totalPages: data.total_pages || 0
+      };
+    }
+    
+    if (available.individual_clusters && available.individual_clusters.length > 0) {
+      const clustersInfo = await getAllClustersInfo();
+      stats.clusters = {
+        totalClusters: clustersInfo.total_clusters || 0,
+        clusterSizes: Object.entries(clustersInfo.clusters || {}).reduce((acc, [key, value]) => {
+          acc[key] = value.total_records || 0;
+          return acc;
+        }, {})
+      };
+    }
+    
+    return stats;
+  } catch (error) {
+    console.error("Error fetching dataset stats:", error);
+    return {};
+  }
+}; 
