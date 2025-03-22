@@ -11,4 +11,5 @@ transformers>=4.41.0
 huggingface-hub==0.29.3
 urllib3==1.26.17
 cohere==3.0.1
-
+Flask-Cors==4.0.0
+hdbscan==0.8.3
