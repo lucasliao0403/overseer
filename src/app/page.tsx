@@ -1,6 +1,6 @@
 'use client';
 
-import SphereScene from '@/components/SphereScene';
+import SphereScene from '../components/SphereScene';
 import { useState } from 'react';
 
 export default function Home() {
@@ -52,7 +52,7 @@ export default function Home() {
   };
 
   return (
-    <main className="relative min-h-screen">
+    <div className="w-full h-screen">
       <SphereScene />
 
       {/* Button container */}
@@ -79,6 +79,6 @@ export default function Home() {
           {isLoading ? 'Processing...' : 'Download'}
         </button>
       </div>
-    </main>
+    </div>
   );
 } 

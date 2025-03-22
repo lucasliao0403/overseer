@@ -3,65 +3,75 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 import re
 
-# Load the resume dataset
-df = pd.read_csv("hf://datasets/sankar12345/Resume-Dataset/Resume.csv")
-print(df.Resume_str)
-
-# Print DataFrame properties
-print("DataFrame shape:", df.shape)
-print("\nDataFrame columns:", df.columns.tolist())
-print("\nDataFrame info:")
-df.info()
-print("\nFirst few rows of Resume_str column:")
-print(df['Resume_str'].head())
-
-# Basic cleaning function (minimal preprocessing as BERT handles most of it)
 def clean_text(text):
+    """Basic cleaning function for resume text"""
     if isinstance(text, str):
         # Remove excessive whitespace
         text = re.sub(r'\s+', ' ', text).strip()
         return text
     return ""
 
-# Apply basic cleaning to Resume_str column
-resume_column = 'Resume_str'  # Changed from 'Resume' to 'Resume_str'
-df['cleaned_text'] = df[resume_column].apply(clean_text)
-
-# Load a pretrained Sentence Transformer model
-model = SentenceTransformer("all-MiniLM-L6-v2")
-
-# Calculate embeddings for all resumes
-resume_embeddings = model.encode(df['cleaned_text'].tolist(), show_progress_bar=True)
-
-print(f"Shape of embeddings array: {resume_embeddings.shape}")
-print(f"Sample embedding vector: {resume_embeddings[0][:10]}...")  # Show first 10 values of first embedding
-
-# Find the greatest and least values in the first 100 embeddings
-if len(resume_embeddings) >= 100:
-    first_100_embeddings = resume_embeddings[:100]
-    max_value = np.max(first_100_embeddings)
-    min_value = np.min(first_100_embeddings)
-    print(f"Greatest value in first 100 embeddings: {max_value}")
-    print(f"Least value in first 100 embeddings: {min_value}")
+def generate_embeddings(df, resume_column='Resume_str', model_name="all-MiniLM-L6-v2"):
+    """Generate embeddings for resume texts"""
+    # Apply basic cleaning to Resume column
+    df['cleaned_text'] = df[resume_column].apply(clean_text)
     
-    # Also print which embedding and position contains these values
-    max_indices = np.unravel_index(np.argmax(first_100_embeddings), first_100_embeddings.shape)
-    min_indices = np.unravel_index(np.argmin(first_100_embeddings), first_100_embeddings.shape)
-    print(f"Max value location: embedding {max_indices[0]}, position {max_indices[1]}")
-    print(f"Min value location: embedding {min_indices[0]}, position {min_indices[1]}")
-else:
-    print("Dataset has fewer than 100 embeddings.")
+    # Load a pretrained Sentence Transformer model
+    model = SentenceTransformer(model_name)
+    
+    # Calculate embeddings for all resumes
+    resume_embeddings = model.encode(df['cleaned_text'].tolist(), show_progress_bar=True)
+    
+    print(f"Shape of embeddings array: {resume_embeddings.shape}")
+    print(f"Sample embedding vector: {resume_embeddings[0][:10]}...")  # Show first 10 values
+    
+    return resume_embeddings
 
+def main():
+    # Load the resume dataset
+    print("Loading resume dataset...")
+    try:
+        df = pd.read_csv("hf://datasets/sankar12345/Resume-Dataset/Resume.csv")
+    except Exception as e:
+        print(f"Error loading dataset from Hugging Face: {e}")
+        print("Trying local file...")
+        try:
+            df = pd.read_csv("Resume.csv")
+        except Exception as e2:
+            print(f"Error loading local file: {e2}")
+            return None, None
+    
+    # Print dataset information
+    print("DataFrame shape:", df.shape)
+    print("\nDataFrame columns:", df.columns.tolist())
+    
+    # Generate embeddings
+    print("\nGenerating embeddings...")
+    resume_embeddings = generate_embeddings(df)
+    
+    # Save embeddings for later use
+    np.save('resume_embeddings.npy', resume_embeddings)
+    print("Saved embeddings to resume_embeddings.npy")
+    
+    # Save cleaned dataframe for later use
+    df.to_csv('cleaned_resumes.csv', index=False)
+    print("Saved cleaned dataframe to cleaned_resumes.csv")
+    
+    return df, resume_embeddings
+
+if __name__ == "__main__":
+    df, embeddings = main()
+ 
 # # Optional: Calculate similarity matrix between resumes
 # # Warning: This can be memory-intensive for large datasets
 # # similarities = model.similarity(resume_embeddings, resume_embeddings)
 # # print(f"Similarity matrix shape: {similarities.shape}")
-
+# 
 # # Save embeddings for later use
-np.save('resume_embeddings.npy', resume_embeddings)
-
+# np.save('resume_embeddings.npy', resume_embeddings)
+# 
 # # If you want to add embeddings back to the dataframe as a new column
 # # This converts each embedding array to a list and stores it in the DataFrame
 # df['embedding'] = list(resume_embeddings)
-
+# 
 # # Now you can use these embeddings for downstream tasks like clustering or classification 
