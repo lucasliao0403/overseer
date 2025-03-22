@@ -6,9 +6,9 @@ import time
 import sys
 
 # Import functions from our other files
-from api.embeddings import main as embeddings_main
-from api.cluster_analysis import main as cluster_analysis_main
-from api.create_unbiased_dataset import create_unbiased_dataset
+from embeddings import main as embeddings_main
+from cluster_analysis import main as cluster_analysis_main
+from create_unbiased_dataset import create_unbiased_dataset
 
 # Setup logging
 def setup_logging():
