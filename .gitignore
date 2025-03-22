@@ -54,3 +54,5 @@ pythonenv/
 *.csv
 cluster_sizes.png
 cluster_visualization.png
+*.log
+*_analysis.txt
