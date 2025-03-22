@@ -218,6 +218,26 @@ export const getAllClusterAnalyses = async () => {
 };
 
 /**
+ * Fetches the unbiased embeddings data for console logging
+ * @returns {Promise<Object>} The embeddings data
+ */
+export const getUnbiasedEmbeddingsData = async () => {
+    try {
+      const response = await fetch(getApiUrl("unbiased_embeddings_data"));
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to fetch unbiased embeddings: ${errorText}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error("Error fetching unbiased embeddings data:", error);
+      throw error;
+    }
+  };
+
+/**
  * Get analysis for a specific cluster
  * @param {number} clusterId - Cluster ID
  * @returns {Promise<Object>} Cluster analysis

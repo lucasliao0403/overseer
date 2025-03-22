@@ -11,6 +11,7 @@ import {
   saveFile,
   getAllClusterAnalyses,
   getAllClustersInfo,
+  getUnbiasedEmbeddingsData,
 } from "../api/apiClient";
 
 // Define interfaces for our API responses
@@ -57,6 +58,14 @@ interface ClustersInfoResponse {
   };
 }
 
+// Add this interface near your other interfaces
+interface EmbeddingsData {
+  dimensions: number;
+  count: number;
+  embeddings: number[][];
+  file_size_bytes: number;
+}
+
 export default function Home() {
   const [resumes, setResumes] = useState<Resume[]>([]);
   const [summary, setSummary] = useState<string>("");
@@ -69,6 +78,9 @@ export default function Home() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [jobStatus, setJobStatus] = useState<string | null>(null);
   const [processingLog, setProcessingLog] = useState<string>("");
+  const [embeddingsData, setEmbeddingsData] = useState<EmbeddingsData | null>(
+    null
+  );
 
   useEffect(() => {
     const fetchData = async () => {
@@ -290,6 +302,50 @@ export default function Home() {
     }
   };
 
+  const handleFetchAndLogEmbeddings = async () => {
+    setIsLoading(true);
+    try {
+      console.log("Fetching unbiased embeddings data...");
+      const data = (await getUnbiasedEmbeddingsData()) as EmbeddingsData;
+
+      // Log the entire embeddings data to console
+      console.log("Unbiased embeddings data:", data);
+      console.log("Number of embeddings:", data.count);
+      console.log("Embedding dimensions:", data.dimensions);
+      console.log("First embedding:", data.embeddings[0]);
+
+      alert(
+        `Successfully fetched ${data.count} embeddings. Check the console.`
+      );
+    } catch (error) {
+      console.error("Error fetching embeddings:", error);
+      alert("Error fetching embeddings data");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleFetchEmbeddingsInfo = async () => {
+    setIsLoading(true);
+    try {
+      console.log("Fetching unbiased embeddings info...");
+      const embeddings = (await getUnbiasedEmbeddingsData()) as EmbeddingsData;
+
+      // Save embeddings to state
+      setEmbeddingsData(embeddings);
+
+      // Log detailed embeddings info to console
+      console.log("Unbiased embeddings info:", embeddings);
+      console.log(embeddings.embeddings);
+
+      return embeddings;
+    } catch (error) {
+      console.error("Error fetching unbiased embeddings info:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <main className="relative min-h-screen">
       <SphereScene />
@@ -342,6 +398,13 @@ export default function Home() {
           className="px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800 transition-all hover:scale-110 disabled:opacity-50"
         >
           {isLoading ? "Processing..." : "Download Summary"}
+        </button>
+        <button
+          onClick={handleFetchEmbeddingsInfo}
+          disabled={isLoading}
+          className="px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800 transition-all hover:scale-110 disabled:opacity-50"
+        >
+          {isLoading ? "Processing..." : "Fetch Embeddings Info"}
         </button>
       </div>
 
