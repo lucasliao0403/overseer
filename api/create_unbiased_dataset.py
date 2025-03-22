@@ -5,12 +5,14 @@ import os
 import random
 import json
 from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
 
 def create_unbiased_dataset():
     """
     Creates an unbiased version of the original dataset by removing 
-    50% of the datapoints from selected clusters based on embeddings
-    rather than indices.
+    50% of the datapoints from selected clusters and outputs only 6D
+    PCA-reduced versions as NPY files.
     """
     print("Creating unbiased dataset using embedding-based approach...")
     
@@ -121,35 +123,67 @@ def create_unbiased_dataset():
         if idx < len(keep_mask):
             keep_mask[idx] = False
     
-    # Filter the embeddings
+    # Split the embeddings
     unbiased_embeddings = all_embeddings[keep_mask]
-    
-    # Save the filtered embeddings
-    unbiased_embeddings_file = output_dir / "unbiased_embeddings.npy"
-    np.save(unbiased_embeddings_file, unbiased_embeddings)
-    print(f"Unbiased embeddings saved to {unbiased_embeddings_file} ({len(unbiased_embeddings)} embeddings)")
-    
-    # Also save the embeddings for removed entries
     removed_embeddings = all_embeddings[~keep_mask]
-    removed_embeddings_file = output_dir / "removed_embeddings.npy"
-    np.save(removed_embeddings_file, removed_embeddings)
-    print(f"Removed embeddings saved to {removed_embeddings_file} ({len(removed_embeddings)} embeddings)")
+    
+    print(f"Split embeddings: {len(unbiased_embeddings)} kept, {len(removed_embeddings)} removed")
+    
+    # Apply PCA directly to the embeddings to get 6D versions
+    print("\nApplying PCA to reduce embeddings to 6D...")
+    pca = PCA(n_components=6)
+    
+    # Fit PCA on all embeddings for consistent transformation
+    pca.fit(all_embeddings)
+    print(f"Explained variance ratio: {pca.explained_variance_ratio_}")
+    
+    # Transform each set to 6D
+    all_6d = pca.transform(all_embeddings)
+    unbiased_6d = pca.transform(unbiased_embeddings)
+    removed_6d = pca.transform(removed_embeddings)
+    
+    # Normalize the vectors (L2 normalization)
+    def normalize_embeddings(emb):
+        norm = np.sqrt(np.sum(emb**2, axis=1)).reshape(-1, 1)
+        return emb / norm
+    
+    all_6d_normalized = normalize_embeddings(all_6d)
+    unbiased_6d_normalized = normalize_embeddings(unbiased_6d)
+    removed_6d_normalized = normalize_embeddings(removed_6d)
+    
+    # Save directly as NPY files
+    all_6d_file = output_dir / "all_embeddings_6d.npy"
+    unbiased_6d_file = output_dir / "unbiased_embeddings_6d.npy"
+    removed_6d_file = output_dir / "removed_embeddings_6d.npy"
+    
+    np.save(all_6d_file, all_6d_normalized)
+    np.save(unbiased_6d_file, unbiased_6d_normalized)
+    np.save(removed_6d_file, removed_6d_normalized)
+    
+    print(f"Saved 6D embeddings as NPY files:")
+    print(f"  - All embeddings (6D): {all_6d_file}")
+    print(f"  - Unbiased embeddings (6D): {unbiased_6d_file}")
+    print(f"  - Removed embeddings (6D): {removed_6d_file}")
     
     # Print file sizes
     original_size_mb = os.path.getsize(cleaned_file) / (1024 * 1024)
     unbiased_size_mb = os.path.getsize(output_file) / (1024 * 1024)
     removed_size_mb = os.path.getsize(removed_file) / (1024 * 1024)
     original_emb_size_mb = os.path.getsize(embeddings_file) / (1024 * 1024)
-    unbiased_emb_size_mb = os.path.getsize(unbiased_embeddings_file) / (1024 * 1024)
-    removed_emb_size_mb = os.path.getsize(removed_embeddings_file) / (1024 * 1024)
+    
+    # Get 6D file sizes
+    all_6d_size_mb = os.path.getsize(all_6d_file) / (1024 * 1024)
+    unbiased_6d_size_mb = os.path.getsize(unbiased_6d_file) / (1024 * 1024)
+    removed_6d_size_mb = os.path.getsize(removed_6d_file) / (1024 * 1024)
     
     print(f"\nFile sizes:")
     print(f"Original cleaned_resumes.csv: {original_size_mb:.2f} MB")
     print(f"Unbiased dataset: {unbiased_size_mb:.2f} MB")
     print(f"Removed entries: {removed_size_mb:.2f} MB")
-    print(f"Original embeddings: {original_emb_size_mb:.2f} MB")
-    print(f"Unbiased embeddings: {unbiased_emb_size_mb:.2f} MB")
-    print(f"Removed embeddings: {removed_emb_size_mb:.2f} MB")
+    print(f"Original embeddings (384D): {original_emb_size_mb:.2f} MB")
+    print(f"All embeddings (6D): {all_6d_size_mb:.2f} MB")
+    print(f"Unbiased embeddings (6D): {unbiased_6d_size_mb:.2f} MB")
+    print(f"Removed embeddings (6D): {removed_6d_size_mb:.2f} MB")
     
     # Save summary statistics
     summary = {
@@ -163,8 +197,9 @@ def create_unbiased_dataset():
             "unbiased_mb": unbiased_size_mb,
             "removed_mb": removed_size_mb,
             "original_embeddings_mb": original_emb_size_mb,
-            "unbiased_embeddings_mb": unbiased_emb_size_mb,
-            "removed_embeddings_mb": removed_emb_size_mb
+            "all_embeddings_6d_mb": all_6d_size_mb,
+            "unbiased_embeddings_6d_mb": unbiased_6d_size_mb,
+            "removed_embeddings_6d_mb": removed_6d_size_mb
         }
     }
     
@@ -178,9 +213,10 @@ def create_unbiased_dataset():
         f.write(f"Overall removal percentage: {summary['removal_percentage']:.2f}%\n\n")
         
         f.write("Embeddings information:\n")
-        f.write(f"  Original embeddings: {len(all_embeddings)} vectors ({original_emb_size_mb:.2f} MB)\n")
-        f.write(f"  Unbiased embeddings: {len(unbiased_embeddings)} vectors ({unbiased_emb_size_mb:.2f} MB)\n")
-        f.write(f"  Removed embeddings: {len(removed_embeddings)} vectors ({removed_emb_size_mb:.2f} MB)\n\n")
+        f.write(f"  Original embeddings (384D): {len(all_embeddings)} vectors ({original_emb_size_mb:.2f} MB)\n")
+        f.write(f"  All embeddings (6D): {len(all_6d_normalized)} vectors ({all_6d_size_mb:.2f} MB)\n")
+        f.write(f"  Unbiased embeddings (6D): {len(unbiased_6d_normalized)} vectors ({unbiased_6d_size_mb:.2f} MB)\n")
+        f.write(f"  Removed embeddings (6D): {len(removed_6d_normalized)} vectors ({removed_6d_size_mb:.2f} MB)\n\n")
         
         f.write("Removal by cluster (using embeddings):\n")
         for cluster_num in top_clusters:
@@ -208,8 +244,9 @@ def update_download_paths(output_dir):
             
         # For simplicity, we'll just print a message suggesting manual update
         print("\nIMPORTANT: You may need to update flask_app.py to include new download paths:")
-        print('Add "unbiased_embeddings": "unbiased_dataset/unbiased_embeddings.npy" to file_paths dictionary')
-        print('Add "removed_embeddings": "unbiased_dataset/removed_embeddings.npy" to file_paths dictionary')
+        print('Add "all_embeddings_6d": "unbiased_dataset/all_embeddings_6d.npy" to file_paths dictionary')
+        print('Add "unbiased_embeddings_6d": "unbiased_dataset/unbiased_embeddings_6d.npy" to file_paths dictionary')
+        print('Add "removed_embeddings_6d": "unbiased_dataset/removed_embeddings_6d.npy" to file_paths dictionary')
     except Exception as e:
         print(f"Error updating download paths: {e}")
 

@@ -83,7 +83,7 @@ def get_all_clusters():
 @app.route('/api/unbiased_embeddings_data', methods=['GET'])
 def get_unbiased_embeddings_data():
     """Return the unbiased embeddings as JSON"""
-    file_path = "unbiased_dataset/unbiased_embeddings.npy"
+    file_path = "unbiased_dataset/unbiased_embeddings_6d.npy"
     if not os.path.exists(file_path):
         return jsonify({"error": "Unbiased embeddings not found"}), 404
     
@@ -108,7 +108,7 @@ def get_unbiased_embeddings_data():
 @app.route('/api/removed_embeddings_data', methods=['GET'])
 def get_removed_embeddings_data():
     """Return the removed embeddings as JSON"""
-    file_path = "unbiased_dataset/removed_embeddings.npy"
+    file_path = "unbiased_dataset/removed_embeddings_6d.npy"
     if not os.path.exists(file_path):
         return jsonify({"error": "Removed embeddings not found"}), 404
     
