@@ -716,10 +716,10 @@ export default function SphereScene() {
         className="w-full h-full fixed top-0 left-0 -z-10 cursor-grab active:cursor-grabbing" 
       />
       
-      {/* Legend */}
+      {/* Legend with Recenter button */}
       <div className="absolute top-4 left-4 bg-white/90 p-4 rounded-lg shadow-lg border border-gray-200">
         <h3 className="font-semibold mb-2 text-black">Clusters</h3>
-        <div className="space-y-2">
+        <div className="space-y-2 mb-4">
           {[0, 1, 2, 3].map(clusterId => (
             <div 
               key={clusterId}
@@ -737,15 +737,15 @@ export default function SphereScene() {
             </div>
           ))}
         </div>
+        
+        {/* Recenter button moved inside the cluster panel */}
+        <button
+          onClick={handleRecenter}
+          className="w-full bg-gray-100 px-4 py-2 rounded-lg text-gray-900 hover:bg-gray-200 transition-colors text-sm font-medium"
+        >
+          Recenter View
+        </button>
       </div>
-      
-      {/* Recenter button */}
-      <button
-        onClick={handleRecenter}
-        className="absolute bottom-4 right-4 bg-white/90 px-4 py-2 rounded-lg shadow-lg border border-gray-200 text-gray-900 hover:bg-white transition-colors"
-      >
-        Recenter
-      </button>
       
       {hoveredVector && (
         <div className="absolute top-4 right-4 bg-white/90 p-4 rounded-lg shadow-lg border border-gray-200">
@@ -761,6 +761,12 @@ export default function SphereScene() {
           </div>
         </div>
       )}
+      
+      {/* Information box in bottom right corner */}
+      <div className="absolute bottom-4 right-4 bg-gray-700/80 text-white p-3 rounded-lg shadow-lg max-w-xs">
+        <p className="text-sm">Click on spheres to view details</p>
+        <p className="text-sm">Drag to rotate | Scroll to zoom</p>
+      </div>
     </main>
   );
 }

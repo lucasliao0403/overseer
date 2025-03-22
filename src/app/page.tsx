@@ -11,6 +11,7 @@ export default function Home() {
   const [showUploadModal, setShowUploadModal] = useState<boolean>(false);
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [activeTab, setActiveTab] = useState<string>("clusters");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -149,6 +150,32 @@ export default function Home() {
     <main className="relative min-h-screen">
       <SphereScene />
 
+      {/* Navigation Tabs */}
+      <div className="fixed top-8 left-1/2 transform -translate-x-1/2 z-20">
+        <div className="bg-white/90 rounded-full shadow-lg p-1 flex">
+          <button
+            onClick={() => setActiveTab("clusters")}
+            className={`px-8 py-3 rounded-full text-lg font-medium transition-all ${
+              activeTab === "clusters" 
+                ? "bg-black text-white" 
+                : "bg-transparent text-gray-700 hover:bg-gray-100"
+            }`}
+          >
+            Clusters
+          </button>
+          <button
+            onClick={() => setActiveTab("bias")}
+            className={`px-8 py-3 rounded-full text-lg font-medium transition-all ${
+              activeTab === "bias" 
+                ? "bg-black text-white" 
+                : "bg-transparent text-gray-700 hover:bg-gray-100"
+            }`}
+          >
+            Bias Analysis
+          </button>
+        </div>
+      </div>
+
       {/* Button container */}
       <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-20 flex gap-4">
         <button
@@ -183,14 +210,14 @@ export default function Home() {
             onClick={() => setShowUploadModal(false)}
           ></div>
           
-          {/* Modal content */}
-          <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden transform transition-all duration-300 ease-out animate-fadeIn">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xl font-semibold text-gray-900 dark:text-white">Upload CSV Data</h3>
+          {/* Modal content - updated to match the screenshot */}
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden transform transition-all duration-300 ease-out animate-fadeIn">
+            <div className="p-8">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-2xl font-semibold text-gray-900">Upload CSV Data</h3>
                 <button 
                   onClick={() => setShowUploadModal(false)}
-                  className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
+                  className="text-gray-500 hover:text-gray-700 transition-colors"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -198,12 +225,12 @@ export default function Home() {
                 </button>
               </div>
               
-              {/* Drag and drop area */}
+              {/* Drag and drop area - updated to match the screenshot */}
               <div 
-                className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors mb-6 ${
+                className={`border-2 border-dashed border-gray-300 rounded-lg p-10 text-center cursor-pointer transition-colors mb-8 ${
                   isDragging 
-                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' 
-                    : 'border-gray-300 dark:border-gray-600 hover:border-blue-500 dark:hover:border-blue-500'
+                    ? 'border-blue-500 bg-blue-50' 
+                    : 'hover:border-blue-500'
                 }`}
                 onClick={triggerFileInput}
                 onDragOver={handleDragOver}
@@ -218,41 +245,41 @@ export default function Home() {
                   onChange={handleFileChange}
                 />
                 
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mx-auto text-gray-400 dark:text-gray-500 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mx-auto text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
                 
-                <p className="text-sm text-gray-600 dark:text-gray-400 font-medium">
+                <p className="text-lg text-gray-700 font-medium mb-1">
                   {uploadedFile 
                     ? `Selected: ${uploadedFile.name}` 
                     : 'Drop your CSV file here or click to browse'
                   }
                 </p>
-                <p className="text-xs text-gray-500 dark:text-gray-500 mt-2">Supports CSV files only</p>
+                <p className="text-sm text-gray-500">Supports CSV files only</p>
               </div>
               
-              {/* Format example */}
-              <div className="mb-6">
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">Expected format:</p>
-                <div className="bg-gray-100 dark:bg-gray-900 p-3 rounded text-xs font-mono overflow-x-auto">
+              {/* Format example - updated to match the screenshot */}
+              <div className="mb-8">
+                <p className="text-lg text-gray-700 mb-2">Expected format:</p>
+                <div className="bg-gray-100 p-4 rounded-lg text-sm font-mono overflow-x-auto text-gray-700 mb-2">
                   x,y,z,h,s,b,size,cluster,confidence<br/>
                   0.1,0.2,0.3,180,50,80,1.2,0,0.95<br/>
                   ...
                 </div>
               </div>
               
-              {/* Action buttons */}
-              <div className="flex justify-end space-x-3">
+              {/* Action buttons - updated to match the screenshot */}
+              <div className="flex justify-end space-x-4">
                 <button 
                   onClick={() => setShowUploadModal(false)}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  className="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors text-lg"
                 >
                   Cancel
                 </button>
                 <button 
                   onClick={processUpload}
                   disabled={!uploadedFile || isLoading}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-lg"
                 >
                   {isLoading ? 'Processing...' : 'Process CSV'}
                 </button>
