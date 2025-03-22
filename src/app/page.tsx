@@ -367,6 +367,7 @@ export default function Home() {
       <SphereScene
         unbiasedEmbeddings={embeddingsData}
         removedEmbeddings={removedEmbeddingsData}
+        activeTab={activeTab}
       />
 
       {/* Navigation Tabs */}
