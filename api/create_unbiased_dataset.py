@@ -3,32 +3,20 @@ import numpy as np
 from pathlib import Path
 import os
 import random
-import json
-from sklearn.metrics.pairwise import cosine_similarity
 
 def create_unbiased_dataset():
     """
-    Creates an unbiased version of the original dataset by removing 
-    50% of the datapoints from selected clusters based on embeddings
-    rather than indices.
+    Creates an unbiased version of the original dataset by randomly removing 
+    50% of the datapoints from clusters 1, 2, and 3 in the cleaned_resumes.csv file.
+    The original cluster files are not modified.
     """
-    print("Creating unbiased dataset using embedding-based approach...")
+    print("Creating unbiased dataset...")
     
     # Check if cleaned_resumes.csv exists
     cleaned_file = Path("cleaned_resumes.csv")
     if not cleaned_file.exists():
         print("Error: cleaned_resumes.csv not found. Run embeddings.py first.")
         return
-    
-    # Check if embeddings file exists
-    embeddings_file = Path("resume_embeddings.npy")
-    if not embeddings_file.exists():
-        print("Error: resume_embeddings.npy not found. Run embeddings.py first.")
-        return
-    
-    # Load all embeddings
-    all_embeddings = np.load(embeddings_file)
-    print(f"Loaded {len(all_embeddings)} embeddings from resume_embeddings.npy")
     
     # Load the full cleaned dataset
     df_full = pd.read_csv(cleaned_file)
@@ -42,63 +30,69 @@ def create_unbiased_dataset():
     
     # Get the lists of indices that belong to each cluster
     top_clusters = [1, 2, 3]
-    cluster_embeddings_map = {}
+    cluster_indices = {}
     
-    # Load cluster embeddings from JSON files
     for cluster_num in top_clusters:
-        embedding_file = clusters_dir / f"cluster_{cluster_num}_embeddings.json"
-        if not embedding_file.exists():
-            print(f"Warning: {embedding_file} not found, skipping cluster {cluster_num}")
+        cluster_file = clusters_dir / f"cluster_{cluster_num}.csv"
+        if not cluster_file.exists():
+            print(f"Warning: {cluster_file} not found, skipping cluster {cluster_num}")
             continue
-        
-        try:
-            with open(embedding_file, 'r') as f:
-                embeddings_data = json.load(f)
             
-            print(f"Loaded embeddings for cluster {cluster_num}: {len(embeddings_data['embeddings'])} entries")
-            cluster_embeddings_map[cluster_num] = embeddings_data
-        except Exception as e:
-            print(f"Error loading embeddings for cluster {cluster_num}: {e}")
-            continue
-    
-    # Track indices to remove based on embeddings
-    indices_to_remove = []
-    removed_counts = {}
-    
-    # Process each cluster
-    for cluster_num, embeddings_data in cluster_embeddings_map.items():
-        cluster_embeddings = embeddings_data['embeddings']
-        resume_ids = [emb['resume_id'] for emb in cluster_embeddings]
+        cluster_df = pd.read_csv(cluster_file)
+        print(f"Loaded cluster_{cluster_num}.csv with {len(cluster_df)} rows")
         
-        # Get unique resume_ids (in case there are duplicates)
-        unique_resume_ids = list(set(resume_ids))
-        print(f"Cluster {cluster_num} has {len(unique_resume_ids)} unique resume IDs")
+        # Try to identify the indices in the main dataset
+        # Method 1: Using Unnamed:0 column which often contains original indices
+        if 'Unnamed: 0' in cluster_df.columns:
+            indices = cluster_df['Unnamed: 0'].tolist()
+            print(f"Using 'Unnamed: 0' to map indices for cluster {cluster_num}")
+        else:
+            # Method 2: Try to match on Resume_str content
+            print(f"No index column found, using content matching for cluster {cluster_num}")
+            indices = []
+            for i, row in cluster_df.iterrows():
+                # Use a smaller subset of the text for matching to improve performance
+                sample_text = str(row['Resume_str'])[:100]
+                # Find matching indices in the main dataset
+                matches = df_full[df_full['Resume_str'].str.startswith(sample_text, na=False)].index.tolist()
+                if matches:
+                    indices.extend(matches)
         
-        # Randomly select 50% to remove
-        random.seed(42)  # For reproducibility
-        num_to_remove = len(unique_resume_ids) // 2
-        resume_ids_to_remove = random.sample(unique_resume_ids, k=num_to_remove)
-        
-        # Add to the overall list of indices to remove
-        indices_to_remove.extend(resume_ids_to_remove)
-        removed_counts[cluster_num] = num_to_remove
-        
-        print(f"Selected {num_to_remove} entries from cluster {cluster_num} for removal")
-    
-    # Remove duplicates in case some resumes belong to multiple clusters
-    unique_indices_to_remove = list(set(indices_to_remove))
-    print(f"Total unique indices to remove: {len(unique_indices_to_remove)}")
+        cluster_indices[cluster_num] = indices
+        print(f"Identified {len(indices)} rows in cleaned_resumes.csv belonging to cluster {cluster_num}")
     
     # Create a copy of the full dataset
     df_unbiased = df_full.copy()
     
-    # Remove the selected indices
-    df_unbiased = df_unbiased.drop(unique_indices_to_remove)
+    # Combine all indices from all clusters
+    all_cluster_indices = []
+    for cluster_num in top_clusters:
+        if cluster_num in cluster_indices:
+            all_cluster_indices.extend(cluster_indices[cluster_num])
     
-    # Calculate remaining entries per cluster
-    for cluster_num in removed_counts:
-        remaining = len(cluster_embeddings_map[cluster_num]['embeddings']) - removed_counts[cluster_num]
-        print(f"Removed {removed_counts[cluster_num]} entries from cluster {cluster_num}, {remaining} remain")
+    # Count entries in each cluster before removal
+    for cluster_num in top_clusters:
+        if cluster_num in cluster_indices:
+            count = len(cluster_indices[cluster_num])
+            print(f"Cluster {cluster_num} has {count} entries before removal")
+    
+    # Randomly select 50% of indices from these clusters to remove
+    random.seed(42)  # For reproducibility
+    indices_to_remove = random.sample(all_cluster_indices, k=len(all_cluster_indices) // 2)
+    print(f"Removing {len(indices_to_remove)} entries from clusters {top_clusters}")
+    
+    # Remove the selected indices
+    df_unbiased = df_unbiased.drop(indices_to_remove)
+    
+    # Calculate how many entries from each cluster were removed
+    removed_counts = {}
+    for cluster_num in top_clusters:
+        if cluster_num in cluster_indices:
+            original_indices = set(cluster_indices[cluster_num])
+            removed_indices = set(indices_to_remove).intersection(original_indices)
+            removed_counts[cluster_num] = len(removed_indices)
+            remaining = len(original_indices) - len(removed_indices)
+            print(f"Removed {len(removed_indices)} entries from cluster {cluster_num}, {remaining} remain")
     
     # Create output directory if it doesn't exist
     output_dir = Path("unbiased_dataset")
@@ -110,108 +104,56 @@ def create_unbiased_dataset():
     print(f"Unbiased dataset saved to {output_file}")
     
     # Save the removed entries as a separate file for reference
-    removed_df = df_full.loc[unique_indices_to_remove]
+    removed_df = df_full.loc[indices_to_remove]
     removed_file = output_dir / "removed_entries.csv"
     removed_df.to_csv(removed_file, index=False)
     print(f"Removed entries saved to {removed_file}")
-    
-    # Create a mask for indices to keep
-    keep_mask = np.ones(len(all_embeddings), dtype=bool)
-    for idx in unique_indices_to_remove:
-        if idx < len(keep_mask):
-            keep_mask[idx] = False
-    
-    # Filter the embeddings
-    unbiased_embeddings = all_embeddings[keep_mask]
-    
-    # Save the filtered embeddings
-    unbiased_embeddings_file = output_dir / "unbiased_embeddings.npy"
-    np.save(unbiased_embeddings_file, unbiased_embeddings)
-    print(f"Unbiased embeddings saved to {unbiased_embeddings_file} ({len(unbiased_embeddings)} embeddings)")
-    
-    # Also save the embeddings for removed entries
-    removed_embeddings = all_embeddings[~keep_mask]
-    removed_embeddings_file = output_dir / "removed_embeddings.npy"
-    np.save(removed_embeddings_file, removed_embeddings)
-    print(f"Removed embeddings saved to {removed_embeddings_file} ({len(removed_embeddings)} embeddings)")
     
     # Print file sizes
     original_size_mb = os.path.getsize(cleaned_file) / (1024 * 1024)
     unbiased_size_mb = os.path.getsize(output_file) / (1024 * 1024)
     removed_size_mb = os.path.getsize(removed_file) / (1024 * 1024)
-    original_emb_size_mb = os.path.getsize(embeddings_file) / (1024 * 1024)
-    unbiased_emb_size_mb = os.path.getsize(unbiased_embeddings_file) / (1024 * 1024)
-    removed_emb_size_mb = os.path.getsize(removed_embeddings_file) / (1024 * 1024)
     
     print(f"\nFile sizes:")
     print(f"Original cleaned_resumes.csv: {original_size_mb:.2f} MB")
     print(f"Unbiased dataset: {unbiased_size_mb:.2f} MB")
     print(f"Removed entries: {removed_size_mb:.2f} MB")
-    print(f"Original embeddings: {original_emb_size_mb:.2f} MB")
-    print(f"Unbiased embeddings: {unbiased_emb_size_mb:.2f} MB")
-    print(f"Removed embeddings: {removed_emb_size_mb:.2f} MB")
     
     # Save summary statistics
     summary = {
         "original_count": len(df_full),
         "unbiased_count": len(df_unbiased),
-        "removed_count": len(unique_indices_to_remove),
-        "removal_percentage": (len(unique_indices_to_remove) / len(df_full)) * 100,
+        "removed_count": len(indices_to_remove),
+        "removal_percentage": (len(indices_to_remove) / len(df_full)) * 100,
         "cluster_removal_counts": removed_counts,
         "file_sizes": {
             "original_mb": original_size_mb,
             "unbiased_mb": unbiased_size_mb,
-            "removed_mb": removed_size_mb,
-            "original_embeddings_mb": original_emb_size_mb,
-            "unbiased_embeddings_mb": unbiased_emb_size_mb,
-            "removed_embeddings_mb": removed_emb_size_mb
+            "removed_mb": removed_size_mb
         }
     }
     
     # Save summary as text file
     with open(output_dir / "unbiasing_summary.txt", "w") as f:
-        f.write("UNBIASED DATASET SUMMARY (EMBEDDING-BASED)\n")
-        f.write("========================================\n\n")
+        f.write("UNBIASED DATASET SUMMARY\n")
+        f.write("======================\n\n")
         f.write(f"Original dataset size: {summary['original_count']} entries ({original_size_mb:.2f} MB)\n")
         f.write(f"Unbiased dataset size: {summary['unbiased_count']} entries ({unbiased_size_mb:.2f} MB)\n")
         f.write(f"Removed entries: {summary['removed_count']} entries ({removed_size_mb:.2f} MB)\n")
         f.write(f"Overall removal percentage: {summary['removal_percentage']:.2f}%\n\n")
         
-        f.write("Embeddings information:\n")
-        f.write(f"  Original embeddings: {len(all_embeddings)} vectors ({original_emb_size_mb:.2f} MB)\n")
-        f.write(f"  Unbiased embeddings: {len(unbiased_embeddings)} vectors ({unbiased_emb_size_mb:.2f} MB)\n")
-        f.write(f"  Removed embeddings: {len(removed_embeddings)} vectors ({removed_emb_size_mb:.2f} MB)\n\n")
-        
-        f.write("Removal by cluster (using embeddings):\n")
+        f.write("Removal by cluster:\n")
         for cluster_num in top_clusters:
             if cluster_num in removed_counts:
                 count = removed_counts[cluster_num]
-                original = len(cluster_embeddings_map[cluster_num]['embeddings'])
+                original = len(cluster_indices[cluster_num])
                 remaining = original - count
                 percentage = (count / original) * 100
                 f.write(f"  Cluster {cluster_num}: Removed {count}/{original} entries ({percentage:.2f}%), {remaining} remain\n")
     
     print(f"Summary saved to {output_dir}/unbiasing_summary.txt")
     
-    # Update flask_app.py download paths dynamically
-    update_download_paths(output_dir)
-    
     return df_unbiased, removed_df
 
-def update_download_paths(output_dir):
-    """Update the download paths in flask_app.py to include the new embedding files"""
-    try:
-        flask_app_path = Path("flask_app.py")
-        if not flask_app_path.exists():
-            print("Warning: flask_app.py not found, skipping download path updates")
-            return
-            
-        # For simplicity, we'll just print a message suggesting manual update
-        print("\nIMPORTANT: You may need to update flask_app.py to include new download paths:")
-        print('Add "unbiased_embeddings": "unbiased_dataset/unbiased_embeddings.npy" to file_paths dictionary')
-        print('Add "removed_embeddings": "unbiased_dataset/removed_embeddings.npy" to file_paths dictionary')
-    except Exception as e:
-        print(f"Error updating download paths: {e}")
-
 if __name__ == "__main__":
-    create_unbiased_dataset()
+    create_unbiased_dataset() 

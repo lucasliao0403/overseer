@@ -77,70 +77,6 @@ def analyze_cluster(cluster_df, cluster_num):
         # Return error message as the analysis result
         return f"ANALYSIS FAILED: {error_message}\n\nPlease check cohere_api_errors.log for details."
 
-def save_cluster_embeddings(cluster_df, cluster_num, clusters_dir):
-    """
-    Save embeddings for resumes in this cluster.
-    
-    Args:
-        cluster_df: DataFrame containing the cluster data
-        cluster_num: The number/identifier of the cluster
-        clusters_dir: Path to the clusters directory
-        
-    Returns:
-        Path to the saved embeddings file
-    """
-    print(f"Calculating embeddings for Cluster {cluster_num}...")
-    
-    # Check if embeddings file exists
-    if not os.path.exists("resume_embeddings.npy"):
-        print(f"ERROR: Embeddings file 'resume_embeddings.npy' not found. Cannot save cluster embeddings.")
-        return None
-    
-    # Load all embeddings
-    all_embeddings = np.load("resume_embeddings.npy")
-    
-    # Get resume indices from the cluster
-    # First determine if we have an index column or need to use DataFrame index
-    if 'Unnamed: 0' in cluster_df.columns:
-        # This is likely the original index
-        resume_indices = cluster_df['Unnamed: 0'].values
-    else:
-        # Use the DataFrame index directly
-        resume_indices = cluster_df.index.values
-    
-    # Ensure indices are within range
-    valid_indices = [idx for idx in resume_indices if idx < len(all_embeddings)]
-    
-    if not valid_indices:
-        print(f"WARNING: No valid indices found for Cluster {cluster_num}. Skipping embeddings extraction.")
-        return None
-    
-    # Extract embeddings for this cluster
-    cluster_embeddings = all_embeddings[valid_indices]
-    
-    # Prepare data for JSON serialization
-    embeddings_data = {
-        "cluster_id": cluster_num,
-        "total_embeddings": len(valid_indices),
-        "embeddings": [
-            {
-                "id": i,
-                "resume_id": int(resume_id),
-                "cluster_id": cluster_num,
-                "embedding": embedding.tolist()
-            }
-            for i, (resume_id, embedding) in enumerate(zip(valid_indices, cluster_embeddings))
-        ]
-    }
-    
-    # Save to a JSON file in the clusters directory
-    embeddings_file = clusters_dir / f"cluster_{cluster_num}_embeddings.json"
-    with open(embeddings_file, 'w') as f:
-        json.dump(embeddings_data, f)
-    
-    print(f"  Saved {len(valid_indices)} embeddings to {embeddings_file}")
-    return embeddings_file
-
 def export_complete_dataset(cluster_files):
     """
     Export the original dataset with cluster information
@@ -238,15 +174,12 @@ def main():
     all_analyses = {}
     
     for cluster_file in cluster_files:
-        cluster_num = int(cluster_file.stem.split("_")[1])
+        cluster_num = cluster_file.stem.split("_")[1]
         print(f"Analyzing Cluster {cluster_num}...")
         
         # Load the cluster data
         cluster_df = pd.read_csv(cluster_file)
         print(f"  Cluster size: {len(cluster_df)} resumes")
-        
-        # CRITICAL NEW FEATURE: Save embeddings for this cluster
-        save_cluster_embeddings(cluster_df, cluster_num, clusters_dir)
         
         # Analyze the cluster
         analysis = analyze_cluster(cluster_df, cluster_num)
