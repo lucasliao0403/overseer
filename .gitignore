@@ -48,3 +48,9 @@ env/
 virtualenv/
 ENV/
 pythonenv/
+
+# embeddings
+*.npy
+*.csv
+cluster_sizes.png
+cluster_visualization.png
