@@ -62,12 +62,6 @@ export default function Home() {
   const [summary, setSummary] = useState<string>("");
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [showUploadModal, setShowUploadModal] = useState<boolean>(false);
-  const [showLoadingScreen, setShowLoadingScreen] = useState<boolean>(false);
-  const [showErrorModal, setShowErrorModal] = useState<boolean>(false);
-  const [showSuccessNotification, setShowSuccessNotification] = useState<boolean>(false);
-  const [successMessage, setSuccessMessage] = useState<string>("");
-  const [errorMessage, setErrorMessage] = useState<string>("");
-  const [loadingProgress, setLoadingProgress] = useState<number>(0);
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [activeTab, setActiveTab] = useState<string>("clusters");
@@ -192,28 +186,13 @@ export default function Home() {
       const blob = await downloadFile("unbiased_resumes");
       if (blob) {
         saveFile(blob, "unbiased_resumes.csv");
-        
-        // Show success notification instead of alert
-        setSuccessMessage("Unbiased dataset downloaded successfully");
-        setShowSuccessNotification(true);
-        
-        // Auto-hide success notification after 5 seconds
-        setTimeout(() => {
-          setShowSuccessNotification(false);
-        }, 5000);
+        alert("Unbiased dataset downloaded successfully");
       } else {
-        // Show error modal instead of alert
-        setErrorMessage("Unbiased dataset not available. Please process a file first.");
-        setShowErrorModal(true);
+        alert("Unbiased dataset not available. Please process a file first.");
       }
     } catch (error) {
       console.error("Error filtering files:", error);
-      
-      // Show error modal instead of alert
-      setErrorMessage(`Error filtering files: ${
-        error instanceof Error ? error.message : "Unknown error"
-      }`);
-      setShowErrorModal(true);
+      alert("Error filtering files");
     } finally {
       setIsLoading(false);
     }
@@ -226,28 +205,13 @@ export default function Home() {
       const blob = await downloadFile("summary");
       if (blob) {
         saveFile(blob, "unbiasing_summary.txt");
-        
-        // Show success notification instead of alert
-        setSuccessMessage("Summary downloaded successfully");
-        setShowSuccessNotification(true);
-        
-        // Auto-hide success notification after 5 seconds
-        setTimeout(() => {
-          setShowSuccessNotification(false);
-        }, 5000);
+        alert("Summary downloaded successfully");
       } else {
-        // Show error modal instead of alert
-        setErrorMessage("Summary not available. Please process a file first.");
-        setShowErrorModal(true);
+        alert("Summary not available. Please process a file first.");
       }
     } catch (error) {
       console.error("Error downloading files:", error);
-      
-      // Show error modal instead of alert
-      setErrorMessage(`Error downloading files: ${
-        error instanceof Error ? error.message : "Unknown error"
-      }`);
-      setShowErrorModal(true);
+      alert("Error downloading files");
     } finally {
       setIsLoading(false);
     }
@@ -257,9 +221,7 @@ export default function Home() {
     const file = e.target.files?.[0];
     if (file) {
       if (file.type !== "text/csv" && !file.name.endsWith(".csv")) {
-        // Show error modal instead of alert
-        setErrorMessage("Please upload a CSV file");
-        setShowErrorModal(true);
+        alert("Please upload a CSV file");
         return;
       }
       setUploadedFile(file);
@@ -283,9 +245,7 @@ export default function Home() {
     const file = e.dataTransfer.files?.[0];
     if (file) {
       if (file.type !== "text/csv" && !file.name.endsWith(".csv")) {
-        // Show error modal instead of alert
-        setErrorMessage("Please upload a CSV file");
-        setShowErrorModal(true);
+        alert("Please upload a CSV file");
         return;
       }
       setUploadedFile(file);
@@ -298,71 +258,35 @@ export default function Home() {
 
   const processUpload = async () => {
     if (!uploadedFile) {
-      // Use inline notification instead of alert
-      setErrorMessage('Please select a CSV file first');
-      setShowErrorModal(true);
+      alert("Please select a CSV file first");
       return;
     }
-    
-    // Close the upload modal immediately
-    setShowUploadModal(false);
-    
-    // Show the loading screen
-    setShowLoadingScreen(true);
-    setLoadingProgress(0);
-    
+
+    setIsLoading(true);
     try {
-      // Simulate progress updates
-      const progressInterval = setInterval(() => {
-        setLoadingProgress(prev => {
-          const newProgress = prev + Math.random() * 15;
-          return newProgress > 90 ? 90 : newProgress; // Cap at 90% until complete
-        });
-      }, 500);
-      
-      // Simulate file upload and processing
-      // In a real app, replace this with your actual API call
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      
-      // Mock successful response
-      const mockJobId = `d${Math.random().toString(36).substring(2, 8)}fd-${Math.random().toString(36).substring(2, 6)}-${Math.random().toString(36).substring(2, 6)}-${Math.random().toString(36).substring(2, 6)}-${Math.random().toString(36).substring(2, 12)}`;
-      
-      // Store the job ID
-      setJobId(mockJobId);
-      
-      // Complete the progress bar
-      clearInterval(progressInterval);
-      setLoadingProgress(100);
-      
-      // Keep loading screen for a moment to show completion
-      setTimeout(() => {
-        setShowLoadingScreen(false);
-        
-        // Show success notification instead of alert
-        setSuccessMessage(
-          `File "${uploadedFile.name}" uploaded successfully. Processing started with job ID: ${mockJobId}`
+      // Upload the file to the backend
+      const response = (await uploadDataset(uploadedFile)) as UploadResponse;
+
+      if (response && response.job_id) {
+        setJobId(response.job_id);
+        setJobStatus("processing");
+
+        // Keep modal open to show progress
+        alert(
+          `File "${uploadedFile.name}" uploaded successfully. Processing started with job ID: ${response.job_id}`
         );
-        setShowSuccessNotification(true);
-        
-        // Auto-hide success notification after 5 seconds
-        setTimeout(() => {
-          setShowSuccessNotification(false);
-        }, 5000);
-      }, 1000);
-      
+      } else {
+        throw new Error("Invalid response from server");
+      }
     } catch (error) {
       console.error("Error processing file:", error);
-      
-      // Hide loading screen
-      setShowLoadingScreen(false);
-      
-      // Show error modal
-      setErrorMessage(
+      alert(
         `Error processing file: ${
           error instanceof Error ? error.message : "Unknown error"
         }`
       );
-      setShowErrorModal(true);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -452,7 +376,7 @@ export default function Home() {
             onClick={() => setShowUploadModal(false)}
           ></div>
 
-          {/* Modal content */}
+          {/* Modal content - updated to match the screenshot */}
           <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden transform transition-all duration-300 ease-out animate-fadeIn">
             <div className="p-8">
               <div className="flex justify-between items-center mb-6">
@@ -480,7 +404,7 @@ export default function Home() {
                 </button>
               </div>
 
-              {/* Drag and drop area */}
+              {/* Drag and drop area - updated to match the screenshot */}
               <div
                 className={`border-2 border-dashed border-gray-300 rounded-lg p-10 text-center cursor-pointer transition-colors mb-8 ${
                   isDragging
@@ -525,7 +449,7 @@ export default function Home() {
                 </p>
               </div>
 
-              {/* Format example */}
+              {/* Format example - updated to match the screenshot */}
               <div className="mb-8">
                 <p className="text-lg text-gray-700 mb-2">Expected format:</p>
                 <div className="bg-gray-100 p-4 rounded-lg text-sm font-mono overflow-x-auto text-gray-700 mb-2">
@@ -537,7 +461,7 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Action buttons */}
+              {/* Action buttons - updated to match the screenshot */}
               <div className="flex justify-end space-x-4">
                 <button
                   onClick={() => setShowUploadModal(false)}
@@ -554,130 +478,6 @@ export default function Home() {
                 </button>
               </div>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Creative Loading Screen */}
-      {showLoadingScreen && (
-        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/80 backdrop-blur-md">
-          <div className="w-64 h-64 relative mb-8">
-            {/* Animated data visualization */}
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="w-40 h-40 rounded-full border-8 border-blue-500/30 animate-spin"></div>
-              <div className="w-32 h-32 rounded-full border-8 border-green-500/30 animate-spin-slow absolute"></div>
-              <div className="w-24 h-24 rounded-full border-8 border-yellow-500/30 animate-reverse-spin absolute"></div>
-            </div>
-            
-            {/* Floating data points */}
-            {Array.from({ length: 20 }).map((_, i) => (
-              <div 
-                key={i}
-                className="absolute w-2 h-2 bg-white rounded-full animate-float"
-                style={{ 
-                  left: `${Math.random() * 100}%`, 
-                  top: `${Math.random() * 100}%`,
-                  animationDelay: `${Math.random() * 5}s`,
-                  animationDuration: `${3 + Math.random() * 4}s`
-                }}
-              ></div>
-            ))}
-            
-            {/* Central icon */}
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="w-16 h-16 bg-white rounded-lg flex items-center justify-center animate-pulse">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-              </div>
-            </div>
-          </div>
-          
-          <div className="text-white text-xl font-medium mb-6">Processing Your Data</div>
-          
-          {/* Progress bar */}
-          <div className="w-80 h-3 bg-gray-700 rounded-full overflow-hidden mb-2">
-            <div 
-              className="h-full bg-gradient-to-r from-blue-500 to-green-500 transition-all duration-500 ease-out"
-              style={{ width: `${loadingProgress}%` }}
-            ></div>
-          </div>
-          
-          <div className="text-white/80 text-sm">
-            {loadingProgress < 30 && "Analyzing data structure..."}
-            {loadingProgress >= 30 && loadingProgress < 60 && "Generating embeddings..."}
-            {loadingProgress >= 60 && loadingProgress < 90 && "Clustering data points..."}
-            {loadingProgress >= 90 && "Finalizing results..."}
-          </div>
-        </div>
-      )}
-
-      {/* Error Modal */}
-      {showErrorModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div 
-            className="absolute inset-0 bg-black/30 backdrop-blur-sm"
-            onClick={() => setShowErrorModal(false)}
-          ></div>
-          
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden transform transition-all duration-300 ease-out animate-fadeIn">
-            <div className="p-8">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-2xl font-semibold text-gray-900">Processing Error</h3>
-                <button 
-                  onClick={() => setShowErrorModal(false)}
-                  className="text-gray-500 hover:text-gray-700 transition-colors"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-              
-              <div className="mb-8 flex items-center justify-center">
-                <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-              </div>
-              
-              <p className="text-gray-700 mb-6 text-center">{errorMessage}</p>
-              
-              <div className="flex justify-center">
-                <button 
-                  onClick={() => setShowErrorModal(false)}
-                  className="px-6 py-3 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-lg"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Success Notification */}
-      {showSuccessNotification && (
-        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 w-full max-w-md">
-          <div className="bg-black/90 text-white p-4 rounded-lg shadow-lg animate-fadeIn flex items-start">
-            <div className="flex-shrink-0 mr-3">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-            <div className="flex-1">
-              <p className="font-medium">Success</p>
-              <p className="text-sm text-white/80">{successMessage}</p>
-            </div>
-            <button 
-              onClick={() => setShowSuccessNotification(false)}
-              className="flex-shrink-0 ml-3 text-white/60 hover:text-white"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
           </div>
         </div>
       )}
