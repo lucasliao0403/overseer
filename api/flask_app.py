@@ -1,0 +1,252 @@
+from flask import Flask, jsonify, request, send_file
+import pandas as pd
+import os
+import json
+from pathlib import Path
+
+app = Flask(__name__)
+
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    """Basic health check endpoint"""
+    return jsonify({"status": "healthy", "message": "API is running"})
+
+@app.route('/api/datasets/available', methods=['GET'])
+def available_datasets():
+    """Return information about which datasets are available"""
+    available = {
+        "cleaned_resumes": os.path.exists("cleaned_resumes.csv"),
+        "unbiased_resumes": os.path.exists("unbiased_dataset/unbiased_resumes.csv"),
+        "removed_entries": os.path.exists("unbiased_dataset/removed_entries.csv"),
+        "all_clusters": os.path.exists("clusters/all_clusters.csv"),
+        "cluster_analysis": os.path.exists("cluster_analysis"),
+    }
+    
+    # Check for individual cluster files
+    available["individual_clusters"] = []
+    if os.path.exists("clusters"):
+        cluster_files = list(Path("clusters").glob("cluster_*.csv"))
+        available["individual_clusters"] = [f.name for f in cluster_files]
+    
+    return jsonify(available)
+
+@app.route('/api/cleaned_resumes', methods=['GET'])
+def get_cleaned_resumes():
+    """Return the cleaned resumes dataset with pagination"""
+    file_path = "cleaned_resumes.csv"
+    if not os.path.exists(file_path):
+        return jsonify({"error": "Cleaned resumes dataset not found"}), 404
+    
+    return get_paginated_dataset(file_path, "cleaned_resumes")
+
+@app.route('/api/unbiased_resumes', methods=['GET'])
+def get_unbiased_resumes():
+    """Return the unbiased resumes dataset with pagination"""
+    file_path = "unbiased_dataset/unbiased_resumes.csv"
+    if not os.path.exists(file_path):
+        return jsonify({"error": "Unbiased resumes dataset not found"}), 404
+    
+    return get_paginated_dataset(file_path, "unbiased_resumes")
+
+@app.route('/api/removed_entries', methods=['GET'])
+def get_removed_entries():
+    """Return the removed entries dataset with pagination"""
+    file_path = "unbiased_dataset/removed_entries.csv"
+    if not os.path.exists(file_path):
+        return jsonify({"error": "Removed entries dataset not found"}), 404
+    
+    return get_paginated_dataset(file_path, "removed_entries")
+
+@app.route('/api/all_clusters', methods=['GET'])
+def get_all_clusters():
+    """Return the all clusters dataset with pagination"""
+    file_path = "clusters/all_clusters.csv"
+    if not os.path.exists(file_path):
+        return jsonify({"error": "All clusters dataset not found"}), 404
+    
+    return get_paginated_dataset(file_path, "all_clusters")
+
+def get_paginated_dataset(file_path, dataset_name):
+    """Helper function to return a paginated dataset"""
+    # Get pagination parameters
+    page = request.args.get('page', default=1, type=int)
+    page_size = request.args.get('page_size', default=100, type=int)
+    
+    # Limit page_size to prevent huge responses
+    page_size = min(page_size, 1000)
+    
+    try:
+        # Load the dataset
+        df = pd.read_csv(file_path)
+        
+        # Get total records and pages
+        total_records = len(df)
+        total_pages = (total_records + page_size - 1) // page_size
+        
+        # Validate page number
+        if page < 1:
+            page = 1
+        if page > total_pages and total_pages > 0:
+            page = total_pages
+        
+        # Calculate start and end indices
+        start_idx = (page - 1) * page_size
+        end_idx = min(start_idx + page_size, total_records)
+        
+        # Get the page of data
+        records = df.iloc[start_idx:end_idx].to_dict('records')
+        
+        # Return the paginated response
+        return jsonify({
+            "dataset": dataset_name,
+            "total_records": total_records,
+            "total_pages": total_pages,
+            "current_page": page,
+            "page_size": page_size,
+            "records": records
+        })
+    
+    except Exception as e:
+        return jsonify({"error": f"Error reading dataset: {str(e)}"}), 500
+
+@app.route('/api/clusters', methods=['GET'])
+def get_clusters():
+    """Return all clusters"""
+    clusters_dir = Path("clusters")
+    if not clusters_dir.exists():
+        return jsonify({"error": "Clusters directory not found"}), 404
+    
+    cluster_files = list(clusters_dir.glob("cluster_*.csv"))
+    if not cluster_files:
+        return jsonify({"error": "No cluster files found"}), 404
+    
+    # Get pagination parameters
+    page = request.args.get('page', default=1, type=int)
+    page_size = request.args.get('page_size', default=100, type=int)
+    
+    # Limit page_size
+    page_size = min(page_size, 1000)
+    
+    try:
+        all_clusters = {}
+        
+        for cluster_file in cluster_files:
+            cluster_id = int(cluster_file.stem.split("_")[1])
+            df = pd.read_csv(cluster_file)
+            all_clusters[f"cluster_{cluster_id}"] = {
+                "total_records": len(df),
+                "sample": df.head(5).to_dict('records')  # Include a small sample
+            }
+        
+        return jsonify({
+            "total_clusters": len(all_clusters),
+            "clusters": all_clusters
+        })
+    
+    except Exception as e:
+        return jsonify({"error": f"Error reading clusters: {str(e)}"}), 500
+
+@app.route('/api/clusters/<cluster_id>', methods=['GET'])
+def get_cluster(cluster_id):
+    """Return a specific cluster by ID"""
+    try:
+        cluster_id = int(cluster_id)
+        file_path = f"clusters/cluster_{cluster_id}.csv"
+        
+        if not os.path.exists(file_path):
+            return jsonify({"error": f"Cluster {cluster_id} not found"}), 404
+        
+        return get_paginated_dataset(file_path, f"cluster_{cluster_id}")
+    
+    except ValueError:
+        return jsonify({"error": "Cluster ID must be a number"}), 400
+    except Exception as e:
+        return jsonify({"error": f"Error reading cluster: {str(e)}"}), 500
+
+@app.route('/api/analysis/clusters', methods=['GET'])
+def get_all_cluster_analyses():
+    """Return all cluster analyses"""
+    file_path = "cluster_analysis/all_clusters_analysis.json"
+    if not os.path.exists(file_path):
+        return jsonify({"error": "Cluster analyses not found"}), 404
+    
+    try:
+        with open(file_path, 'r') as f:
+            analyses = json.load(f)
+        
+        return jsonify(analyses)
+    
+    except Exception as e:
+        return jsonify({"error": f"Error reading analyses: {str(e)}"}), 500
+
+@app.route('/api/analysis/clusters/<cluster_id>', methods=['GET'])
+def get_cluster_analysis(cluster_id):
+    """Return the analysis for a specific cluster"""
+    try:
+        cluster_id = int(cluster_id)
+        file_path = f"cluster_analysis/cluster_{cluster_id}_analysis.txt"
+        
+        if not os.path.exists(file_path):
+            return jsonify({"error": f"Analysis for cluster {cluster_id} not found"}), 404
+        
+        with open(file_path, 'r') as f:
+            analysis = f.read()
+        
+        return jsonify({
+            "cluster_id": cluster_id,
+            "analysis": analysis
+        })
+    
+    except ValueError:
+        return jsonify({"error": "Cluster ID must be a number"}), 400
+    except Exception as e:
+        return jsonify({"error": f"Error reading analysis: {str(e)}"}), 500
+
+@app.route('/api/summary', methods=['GET'])
+def get_unbiasing_summary():
+    """Return the unbiasing summary if it exists"""
+    file_path = "unbiased_dataset/unbiasing_summary.txt"
+    
+    if not os.path.exists(file_path):
+        return jsonify({"error": "Unbiasing summary not found"}), 404
+    
+    try:
+        with open(file_path, 'r') as f:
+            summary = f.read()
+        
+        return jsonify({
+            "summary": summary
+        })
+    
+    except Exception as e:
+        return jsonify({"error": f"Error reading summary: {str(e)}"}), 500
+
+@app.route('/api/download/<file_type>', methods=['GET'])
+def download_file(file_type):
+    """Direct file download endpoint for various outputs"""
+    # Define file paths for different file types
+    file_paths = {
+        "cleaned_resumes": "cleaned_resumes.csv",
+        "unbiased_resumes": "unbiased_dataset/unbiased_resumes.csv",
+        "removed_entries": "unbiased_dataset/removed_entries.csv",
+        "all_clusters": "clusters/all_clusters.csv",
+        "embeddings": "resume_embeddings.npy",
+        "summary": "unbiased_dataset/unbiasing_summary.txt"
+    }
+    
+    # Check if the requested file type exists
+    if file_type not in file_paths:
+        return jsonify({"error": f"Unknown file type: {file_type}"}), 404
+    
+    file_path = file_paths[file_type]
+    if not os.path.exists(file_path):
+        return jsonify({"error": f"File {file_type} not found"}), 404
+    
+    try:
+        return send_file(file_path, as_attachment=True)
+    except Exception as e:
+        return jsonify({"error": f"Error downloading file: {str(e)}"}), 500
+
+if __name__ == '__main__':
+    # Run the Flask app
+    app.run(debug=True, host='0.0.0.0', port=3000) 
