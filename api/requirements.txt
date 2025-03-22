@@ -11,10 +11,4 @@ transformers>=4.41.0
 huggingface-hub==0.29.3
 urllib3==1.26.17
 cohere==3.0.1
-hdbscan==0.8.33
-pathlib>=1.0.1
-re>=2.2.1
-json>=2.0.9
-random>=1.0.1
-logging>=0.5.1.2
 

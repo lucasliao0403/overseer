@@ -64,8 +64,7 @@ export default function Home() {
   const [showUploadModal, setShowUploadModal] = useState<boolean>(false);
   const [showLoadingScreen, setShowLoadingScreen] = useState<boolean>(false);
   const [showErrorModal, setShowErrorModal] = useState<boolean>(false);
-  const [showSuccessNotification, setShowSuccessNotification] =
-    useState<boolean>(false);
+  const [showSuccessNotification, setShowSuccessNotification] = useState<boolean>(false);
   const [successMessage, setSuccessMessage] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState<string>("");
   const [loadingProgress, setLoadingProgress] = useState<number>(0);
@@ -109,13 +108,14 @@ export default function Home() {
   // Poll for job status updates
   useEffect(() => {
     let interval: NodeJS.Timeout;
-    console.log("Job status:", jobStatus);
+
     if (jobId && ["processing", "running"].includes(jobStatus || "")) {
       interval = setInterval(async () => {
         try {
           const status = (await getJobStatus(jobId)) as JobStatusResponse;
           setJobStatus(status.status);
           setProcessingLog(status.log || "");
+
           if (status.status === "completed") {
             // Refresh data when job completes
             const resumesData = (await getCleanedResumes(
@@ -156,11 +156,6 @@ export default function Home() {
                 // We now have all cluster data at once - no need for individual fetches
                 console.log("All cluster data successfully retrieved in bulk");
               }
-
-              // After all the other processing, fetch and log removed embeddings
-              console.log("Job completed, fetching removed embeddings...");
-              const removedEmbeddings = await fetchAndLogRemovedEmbeddings();
-              console.log("Removed embeddings processing complete!");
             } catch (error) {
               console.error("Error fetching cluster data:", error);
             }
@@ -197,31 +192,27 @@ export default function Home() {
       const blob = await downloadFile("unbiased_resumes");
       if (blob) {
         saveFile(blob, "unbiased_resumes.csv");
-
+        
         // Show success notification instead of alert
         setSuccessMessage("Unbiased dataset downloaded successfully");
         setShowSuccessNotification(true);
-
+        
         // Auto-hide success notification after 5 seconds
         setTimeout(() => {
           setShowSuccessNotification(false);
         }, 5000);
       } else {
         // Show error modal instead of alert
-        setErrorMessage(
-          "Unbiased dataset not available. Please process a file first."
-        );
+        setErrorMessage("Unbiased dataset not available. Please process a file first.");
         setShowErrorModal(true);
       }
     } catch (error) {
       console.error("Error filtering files:", error);
-
+      
       // Show error modal instead of alert
-      setErrorMessage(
-        `Error filtering files: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
+      setErrorMessage(`Error filtering files: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`);
       setShowErrorModal(true);
     } finally {
       setIsLoading(false);
@@ -235,11 +226,11 @@ export default function Home() {
       const blob = await downloadFile("summary");
       if (blob) {
         saveFile(blob, "unbiasing_summary.txt");
-
+        
         // Show success notification instead of alert
         setSuccessMessage("Summary downloaded successfully");
         setShowSuccessNotification(true);
-
+        
         // Auto-hide success notification after 5 seconds
         setTimeout(() => {
           setShowSuccessNotification(false);
@@ -251,13 +242,11 @@ export default function Home() {
       }
     } catch (error) {
       console.error("Error downloading files:", error);
-
+      
       // Show error modal instead of alert
-      setErrorMessage(
-        `Error downloading files: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
+      setErrorMessage(`Error downloading files: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`);
       setShowErrorModal(true);
     } finally {
       setIsLoading(false);
@@ -310,70 +299,63 @@ export default function Home() {
   const processUpload = async () => {
     if (!uploadedFile) {
       // Use inline notification instead of alert
-      setErrorMessage("Please select a CSV file first");
+      setErrorMessage('Please select a CSV file first');
       setShowErrorModal(true);
       return;
     }
-
+    
     // Close the upload modal immediately
     setShowUploadModal(false);
-
+    
     // Show the loading screen
     setShowLoadingScreen(true);
     setLoadingProgress(0);
-
+    
     try {
       // Simulate progress updates
       const progressInterval = setInterval(() => {
-        setLoadingProgress((prev) => {
+        setLoadingProgress(prev => {
           const newProgress = prev + Math.random() * 15;
           return newProgress > 90 ? 90 : newProgress; // Cap at 90% until complete
         });
       }, 500);
-
+      
       // Simulate file upload and processing
       // In a real app, replace this with your actual API call
-      await new Promise((resolve) => setTimeout(resolve, 3000));
-
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
       // Mock successful response
-      const mockJobId = `d${Math.random()
-        .toString(36)
-        .substring(2, 8)}fd-${Math.random()
-        .toString(36)
-        .substring(2, 6)}-${Math.random()
-        .toString(36)
-        .substring(2, 6)}-${Math.random()
-        .toString(36)
-        .substring(2, 6)}-${Math.random().toString(36).substring(2, 12)}`;
-
+      const mockJobId = `d${Math.random().toString(36).substring(2, 8)}fd-${Math.random().toString(36).substring(2, 6)}-${Math.random().toString(36).substring(2, 6)}-${Math.random().toString(36).substring(2, 6)}-${Math.random().toString(36).substring(2, 12)}`;
+      
       // Store the job ID
       setJobId(mockJobId);
-
+      
       // Complete the progress bar
       clearInterval(progressInterval);
       setLoadingProgress(100);
-
+      
       // Keep loading screen for a moment to show completion
       setTimeout(() => {
         setShowLoadingScreen(false);
-
+        
         // Show success notification instead of alert
         setSuccessMessage(
           `File "${uploadedFile.name}" uploaded successfully. Processing started with job ID: ${mockJobId}`
         );
         setShowSuccessNotification(true);
-
+        
         // Auto-hide success notification after 5 seconds
         setTimeout(() => {
           setShowSuccessNotification(false);
         }, 5000);
       }, 1000);
+      
     } catch (error) {
       console.error("Error processing file:", error);
-
+      
       // Hide loading screen
       setShowLoadingScreen(false);
-
+      
       // Show error modal
       setErrorMessage(
         `Error processing file: ${
@@ -381,40 +363,6 @@ export default function Home() {
         }`
       );
       setShowErrorModal(true);
-    }
-  };
-
-  const fetchAndLogRemovedEmbeddings = async () => {
-    console.log("Fetching removed embeddings... ------------");
-    try {
-      console.log("Fetching removed embeddings...");
-      const embeddings = await downloadFile("removed_embeddings");
-
-      // Check if we received the embeddings data
-      if (embeddings && embeddings.size > 0) {
-        console.log(
-          "Successfully downloaded removed_embeddings.npy",
-          embeddings
-        );
-
-        // Create a URL for the blob
-        const blobUrl = URL.createObjectURL(embeddings);
-        console.log("Blob URL for removed embeddings:", blobUrl);
-
-        // If you need to parse the NumPy array, you would need a library
-        // like numpy-parser, but that's complex for browser use
-        console.log(
-          `Removed embeddings size: ${(embeddings.size / (1024 * 1024)).toFixed(
-            2
-          )} MB`
-        );
-
-        return embeddings;
-      } else {
-        console.error("Failed to download removed embeddings or file is empty");
-      }
-    } catch (error) {
-      console.error("Error fetching removed embeddings:", error);
     }
   };
 
@@ -620,62 +568,45 @@ export default function Home() {
               <div className="w-32 h-32 rounded-full border-8 border-green-500/30 animate-spin-slow absolute"></div>
               <div className="w-24 h-24 rounded-full border-8 border-yellow-500/30 animate-reverse-spin absolute"></div>
             </div>
-
+            
             {/* Floating data points */}
             {Array.from({ length: 20 }).map((_, i) => (
-              <div
+              <div 
                 key={i}
                 className="absolute w-2 h-2 bg-white rounded-full animate-float"
-                style={{
-                  left: `${Math.random() * 100}%`,
+                style={{ 
+                  left: `${Math.random() * 100}%`, 
                   top: `${Math.random() * 100}%`,
                   animationDelay: `${Math.random() * 5}s`,
-                  animationDuration: `${3 + Math.random() * 4}s`,
+                  animationDuration: `${3 + Math.random() * 4}s`
                 }}
               ></div>
             ))}
-
+            
             {/* Central icon */}
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="w-16 h-16 bg-white rounded-lg flex items-center justify-center animate-pulse">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-10 w-10 text-blue-600"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                  />
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
               </div>
             </div>
           </div>
-
-          <div className="text-white text-xl font-medium mb-6">
-            Processing Your Data
-          </div>
-
+          
+          <div className="text-white text-xl font-medium mb-6">Processing Your Data</div>
+          
           {/* Progress bar */}
           <div className="w-80 h-3 bg-gray-700 rounded-full overflow-hidden mb-2">
-            <div
+            <div 
               className="h-full bg-gradient-to-r from-blue-500 to-green-500 transition-all duration-500 ease-out"
               style={{ width: `${loadingProgress}%` }}
             ></div>
           </div>
-
+          
           <div className="text-white/80 text-sm">
             {loadingProgress < 30 && "Analyzing data structure..."}
-            {loadingProgress >= 30 &&
-              loadingProgress < 60 &&
-              "Generating embeddings..."}
-            {loadingProgress >= 60 &&
-              loadingProgress < 90 &&
-              "Clustering data points..."}
+            {loadingProgress >= 30 && loadingProgress < 60 && "Generating embeddings..."}
+            {loadingProgress >= 60 && loadingProgress < 90 && "Clustering data points..."}
             {loadingProgress >= 90 && "Finalizing results..."}
           </div>
         </div>
@@ -684,61 +615,37 @@ export default function Home() {
       {/* Error Modal */}
       {showErrorModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div
+          <div 
             className="absolute inset-0 bg-black/30 backdrop-blur-sm"
             onClick={() => setShowErrorModal(false)}
           ></div>
-
+          
           <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden transform transition-all duration-300 ease-out animate-fadeIn">
             <div className="p-8">
               <div className="flex justify-between items-center mb-6">
-                <h3 className="text-2xl font-semibold text-gray-900">
-                  Processing Error
-                </h3>
-                <button
+                <h3 className="text-2xl font-semibold text-gray-900">Processing Error</h3>
+                <button 
                   onClick={() => setShowErrorModal(false)}
                   className="text-gray-500 hover:text-gray-700 transition-colors"
                 >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-6 w-6"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M6 18L18 6M6 6l12 12"
-                    />
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
               </div>
-
+              
               <div className="mb-8 flex items-center justify-center">
                 <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-10 w-10 text-red-600"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                    />
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </div>
               </div>
-
+              
               <p className="text-gray-700 mb-6 text-center">{errorMessage}</p>
-
+              
               <div className="flex justify-center">
-                <button
+                <button 
                   onClick={() => setShowErrorModal(false)}
                   className="px-6 py-3 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-lg"
                 >
@@ -755,42 +662,20 @@ export default function Home() {
         <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 w-full max-w-md">
           <div className="bg-black/90 text-white p-4 rounded-lg shadow-lg animate-fadeIn flex items-start">
             <div className="flex-shrink-0 mr-3">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-6 w-6 text-green-400"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M5 13l4 4L19 7"
-                />
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
             </div>
             <div className="flex-1">
               <p className="font-medium">Success</p>
               <p className="text-sm text-white/80">{successMessage}</p>
             </div>
-            <button
+            <button 
               onClick={() => setShowSuccessNotification(false)}
               className="flex-shrink-0 ml-3 text-white/60 hover:text-white"
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
           </div>
