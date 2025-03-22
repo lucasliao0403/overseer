@@ -2,26 +2,72 @@ import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { vectors, Vector6D } from '../data/spheres';
 
+// Extended interface for our data points
+interface DataPoint extends Vector6D {
+  size?: number;        // Size factor (1.0 is default)
+  cluster?: number;     // Cluster ID
+  confidence?: number;  // Confidence score (0-1)
+  connections?: number[]; // Indices of connected data points
+}
+
+// Mock cluster data - replace with actual data from backend
+const mockClusters = [0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3];
+const mockSizes = vectors.map(() => 0.5 + Math.random() * 1.5);
+const mockConfidence = vectors.map(() => 0.3 + Math.random() * 0.7);
+
+// Generate mock connections (in real app, this would come from backend)
+const mockConnections: number[][] = [];
+for (let i = 0; i < vectors.length; i++) {
+  const connections: number[] = [];
+  // Connect points in same cluster with some probability
+  for (let j = 0; j < vectors.length; j++) {
+    if (i !== j && mockClusters[i] === mockClusters[j] && Math.random() > 0.7) {
+      connections.push(j);
+    }
+  }
+  mockConnections.push(connections);
+}
+
+// Enhance vectors with additional data
+const dataPoints: DataPoint[] = vectors.map((vector, index) => ({
+  ...vector,
+  size: mockSizes[index],
+  cluster: mockClusters[index % mockClusters.length],
+  confidence: mockConfidence[index],
+  connections: mockConnections[index]
+}));
+
+// Define cluster colors
+const clusterColors = [
+  new THREE.Color(0x4285F4), // Blue
+  new THREE.Color(0xEA4335), // Red
+  new THREE.Color(0xFBBC05), // Yellow
+  new THREE.Color(0x34A853), // Green
+  new THREE.Color(0x8F00FF), // Purple
+  new THREE.Color(0xFF6D01), // Orange
+];
+
 export default function SphereScene() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const isDraggingRef = useRef(false);
   const rotationRef = useRef({ x: 0, y: 0 });
   const previousMousePositionRef = useRef({ x: 0, y: 0 });
-  const [hoveredVector, setHoveredVector] = useState<Vector6D | null>(null);
+  const [hoveredVector, setHoveredVector] = useState<DataPoint | null>(null);
   const didMoveRef = useRef(false);
   const hoveredSphereRef = useRef<THREE.Mesh | null>(null);
-  const cameraPositionRef = useRef({ z: 8 });
+  const cameraPositionRef = useRef({ z: 12 }); // Increased default distance
+  const [activeCluster, setActiveCluster] = useState<number | null>(null);
 
   useEffect(() => {
     if (!canvasRef.current) return;
 
     // Scene setup
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xffffff);
+    scene.background = new THREE.Color(0xf8f9fa);
 
     // Camera setup
     const camera = new THREE.PerspectiveCamera(
-      75,
+      60,
       window.innerWidth / window.innerHeight,
       0.1,
       1000
@@ -40,12 +86,17 @@ export default function SphereScene() {
     const sphereGroup = new THREE.Group();
     scene.add(sphereGroup);
 
+    // Create a group for connection lines
+    const lineGroup = new THREE.Group();
+    sphereGroup.add(lineGroup);
+
     // Custom shader material definitions
     const vertexShader = `
       varying vec3 vNormal;
       varying vec3 vPosition;
       varying vec2 vUv;
       uniform float time;
+      uniform float pulseIntensity;
       
       void main() {
         vNormal = normalize(normalMatrix * normal);
@@ -54,6 +105,9 @@ export default function SphereScene() {
         
         // Add subtle vertex displacement for shimmer effect
         vec3 newPosition = position + normal * sin(position.x * 10.0 + time * 2.0) * 0.01;
+        
+        // Add pulsing effect for cluster highlighting
+        newPosition += normal * sin(time * 3.0) * pulseIntensity * 0.05;
         
         gl_Position = projectionMatrix * modelViewMatrix * vec4(newPosition, 1.0);
       }
@@ -66,6 +120,8 @@ export default function SphereScene() {
       uniform vec3 baseColor;
       uniform float time;
       uniform bool isHovered;
+      uniform bool isActiveCluster;
+      uniform float confidence;
       
       void main() {
         // Calculate fresnel effect for edge highlighting
@@ -78,8 +134,21 @@ export default function SphereScene() {
         
         // Combine base color with effects
         vec3 color = baseColor;
-        color += vec3(1.0, 1.0, 1.0) * fresnel * 0.3; // Edge highlight
-        color += vec3(1.0, 1.0, 1.0) * shimmer; // Shimmer
+        
+        // Adjust color based on confidence
+        color = mix(color * 0.7, color, confidence);
+        
+        // Add edge highlight
+        color += vec3(1.0, 1.0, 1.0) * fresnel * 0.3;
+        
+        // Add shimmer
+        color += vec3(1.0, 1.0, 1.0) * shimmer;
+        
+        // Add active cluster highlighting
+        if (isActiveCluster && !isHovered) {
+          float pulse = sin(time * 2.0) * 0.5 + 0.5;
+          color = color * 1.2 + vec3(1.0, 1.0, 1.0) * pulse * 0.1;
+        }
         
         // Add glow effect when hovered
         if (isHovered) {
@@ -126,12 +195,27 @@ export default function SphereScene() {
     };
 
     // Store vector data with each sphere
-    const spheresWithData: { sphere: THREE.Mesh; vector: Vector6D; material: THREE.ShaderMaterial }[] = [];
+    const spheresWithData: { 
+      sphere: THREE.Mesh; 
+      dataPoint: DataPoint; 
+      material: THREE.ShaderMaterial;
+      position: THREE.Vector3;
+    }[] = [];
 
-    // Create spheres based on vector data
-    vectors.forEach((vector: Vector6D) => {
-      const geometry = new THREE.SphereGeometry(0.25, 32, 32);
-      const rgbColor = hsbToRgb(vector[3], vector[4], vector[5]);
+    // Create spheres based on data points
+    dataPoints.forEach((dataPoint: DataPoint, index) => {
+      // Determine sphere size based on data
+      const baseSize = 0.2;
+      const sizeMultiplier = dataPoint.size || 1.0;
+      const finalSize = baseSize * sizeMultiplier;
+      
+      const geometry = new THREE.SphereGeometry(finalSize, 32, 32);
+      
+      // Use cluster color or HSB color
+      const clusterColor = clusterColors[dataPoint.cluster || 0 % clusterColors.length];
+      const rgbColor = dataPoint.cluster !== undefined 
+        ? new THREE.Vector3(clusterColor.r, clusterColor.g, clusterColor.b)
+        : hsbToRgb(dataPoint[3], dataPoint[4], dataPoint[5]);
       
       // Create shader material with uniforms
       const material = new THREE.ShaderMaterial({
@@ -140,18 +224,87 @@ export default function SphereScene() {
         uniforms: {
           baseColor: { value: rgbColor },
           time: { value: 0.0 },
-          isHovered: { value: false }
+          isHovered: { value: false },
+          isActiveCluster: { value: false },
+          confidence: { value: dataPoint.confidence || 0.5 },
+          pulseIntensity: { value: 0.0 }
         }
       });
       
       const sphere = new THREE.Mesh(geometry, material);
       
       // Position the sphere
-      sphere.position.set(vector[0] * 2, vector[1] * 2, vector[2] * 2);
+      const position = new THREE.Vector3(
+        dataPoint[0] * 2.5, 
+        dataPoint[1] * 2.5, 
+        dataPoint[2] * 2.5
+      );
+      sphere.position.copy(position);
       
       sphereGroup.add(sphere);
-      spheresWithData.push({ sphere, vector, material });
+      spheresWithData.push({ 
+        sphere, 
+        dataPoint, 
+        material, 
+        position 
+      });
     });
+
+    // Create connection lines between related data points
+    const createConnectionLines = () => {
+      // Remove existing lines
+      while (lineGroup.children.length > 0) {
+        const line = lineGroup.children[0];
+        lineGroup.remove(line);
+        if (line instanceof THREE.Line) {
+          (line.geometry as THREE.BufferGeometry).dispose();
+          (line.material as THREE.Material).dispose();
+        }
+      }
+      
+      // Create new lines
+      spheresWithData.forEach((sourceData, sourceIndex) => {
+        const connections = sourceData.dataPoint.connections || [];
+        
+        connections.forEach(targetIndex => {
+          if (targetIndex >= spheresWithData.length) return;
+          
+          const targetData = spheresWithData[targetIndex];
+          
+          // Skip if neither sphere is in active cluster (when one is selected)
+          if (activeCluster !== null && 
+              sourceData.dataPoint.cluster !== activeCluster && 
+              targetData.dataPoint.cluster !== activeCluster) {
+            return;
+          }
+          
+          // Create line geometry
+          const points = [
+            sourceData.position.clone(),
+            targetData.position.clone()
+          ];
+          
+          const geometry = new THREE.BufferGeometry().setFromPoints(points);
+          
+          // Calculate similarity strength (mock data - replace with actual similarity)
+          const similarity = Math.random(); // 0-1 value
+          
+          // Create line material with opacity based on similarity
+          const material = new THREE.LineBasicMaterial({ 
+            color: 0x999999,
+            transparent: true,
+            opacity: 0.1 + similarity * 0.3, // Adjust opacity based on similarity
+            linewidth: 1
+          });
+          
+          const line = new THREE.Line(geometry, material);
+          lineGroup.add(line);
+        });
+      });
+    };
+
+    // Initial creation of connection lines
+    createConnectionLines();
 
     // Handle window resize
     const handleResize = () => {
@@ -193,7 +346,7 @@ export default function SphereScene() {
       }
       
       // Apply min/max limits
-      camera.position.z = Math.max(2, Math.min(15, camera.position.z));
+      camera.position.z = Math.max(2, Math.min(30, camera.position.z));
       
       // Update the ref to keep track of camera position
       cameraPositionRef.current.z = camera.position.z;
@@ -236,13 +389,66 @@ export default function SphereScene() {
         );
         
         if (hoveredSphere) {
-          setHoveredVector(hoveredSphere.vector);
+          setHoveredVector(hoveredSphere.dataPoint);
           hoveredSphereRef.current = hoveredSphere.sphere;
           hoveredSphere.material.uniforms.isHovered.value = true;
         }
       } else {
         // Not hovering over any sphere, clear selection
         setHoveredVector(null);
+      }
+    };
+
+    // Function to handle sphere click
+    const handleSphereClick = (event: MouseEvent) => {
+      if (didMoveRef.current) return; // Skip if dragging
+      
+      const canvasElement = canvasRef.current;
+      if (!canvasElement) return;
+      
+      // Calculate mouse position in normalized device coordinates (-1 to +1)
+      const rect = canvasElement.getBoundingClientRect();
+      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+      
+      // Update the picking ray with the camera and mouse position
+      raycaster.setFromCamera(mouse, camera);
+      
+      // Calculate objects intersecting the picking ray
+      const intersects = raycaster.intersectObjects(sphereGroup.children);
+      
+      if (intersects.length > 0) {
+        // Find the clicked sphere in our data array
+        const clickedSphere = spheresWithData.find(
+          item => item.sphere === intersects[0].object
+        );
+        
+        if (clickedSphere) {
+          const clickedCluster = clickedSphere.dataPoint.cluster;
+          
+          // Toggle cluster selection
+          if (activeCluster === clickedCluster) {
+            setActiveCluster(null);
+          } else {
+            setActiveCluster(clickedCluster ?? null);
+          }
+          
+          // Update all spheres' active cluster state
+          spheresWithData.forEach(({ material, dataPoint }) => {
+            const isActive = activeCluster === null || dataPoint.cluster === activeCluster;
+            material.uniforms.isActiveCluster.value = isActive;
+            
+            // Add pulsing effect to spheres in the active cluster
+            if (activeCluster !== null && dataPoint.cluster === activeCluster) {
+              material.uniforms.pulseIntensity.value = 1.0;
+            } else {
+              material.uniforms.pulseIntensity.value = 0.0;
+            }
+          });
+          
+          // Recreate connection lines based on active cluster
+          createConnectionLines();
+        }
       }
     };
 
@@ -279,7 +485,10 @@ export default function SphereScene() {
       };
     };
 
-    const handleMouseUp = () => {
+    const handleMouseUp = (event: MouseEvent) => {
+      if (!didMoveRef.current) {
+        handleSphereClick(event);
+      }
       isDraggingRef.current = false;
     };
 
@@ -333,7 +542,7 @@ export default function SphereScene() {
           clientX: touch.clientX,
           clientY: touch.clientY
         });
-        handleMouseUp();
+        handleMouseUp(mouseEvent);
       }
       isDraggingRef.current = false;
     };
@@ -356,7 +565,7 @@ export default function SphereScene() {
       // Target values
       const targetRotX = 0;
       const targetRotY = 0;
-      const targetZ = 8; // Default camera position
+      const targetZ = 12; // Default camera position
       
       const duration = 1000; // Animation duration in ms
       const startTime = performance.now();
@@ -382,6 +591,18 @@ export default function SphereScene() {
       };
       
       requestAnimationFrame(animateReset);
+      
+      // Reset active cluster
+      setActiveCluster(null);
+      
+      // Update all spheres' active cluster state
+      spheresWithData.forEach(({ material }) => {
+        material.uniforms.isActiveCluster.value = true;
+        material.uniforms.pulseIntensity.value = 0.0;
+      });
+      
+      // Recreate connection lines
+      createConnectionLines();
     };
 
     // Animation loop
@@ -436,7 +657,7 @@ export default function SphereScene() {
       // Remove the global recenter function
       delete window.recenterCamera;
     };
-  }, []);
+  }, [activeCluster]);
 
   // Function to handle recenter button click
   const handleRecenter = () => {
@@ -445,12 +666,42 @@ export default function SphereScene() {
     }
   };
 
+  // Function to get cluster name
+  const getClusterName = (clusterId: number | undefined) => {
+    if (clusterId === undefined) return "Unknown";
+    const clusterNames = ["Blue Group", "Red Group", "Yellow Group", "Green Group"];
+    return clusterNames[clusterId % clusterNames.length];
+  };
+
   return (
     <main className="relative min-h-screen">
       <canvas 
         ref={canvasRef} 
         className="w-full h-full fixed top-0 left-0 -z-10 cursor-grab active:cursor-grabbing" 
       />
+      
+      {/* Legend */}
+      <div className="absolute top-4 left-4 bg-white/90 p-4 rounded-lg shadow-lg border border-gray-200">
+        <h3 className="font-semibold mb-2 text-black">Clusters</h3>
+        <div className="space-y-2">
+          {[0, 1, 2, 3].map(clusterId => (
+            <div 
+              key={clusterId}
+              className="flex items-center gap-2 cursor-pointer hover:bg-gray-100 p-1 rounded"
+              onClick={() => setActiveCluster(activeCluster === clusterId ? null : clusterId)}
+            >
+              <div 
+                className="w-4 h-4 rounded-full" 
+                style={{ 
+                  backgroundColor: `rgb(${Math.round(clusterColors[clusterId].r * 255)}, ${Math.round(clusterColors[clusterId].g * 255)}, ${Math.round(clusterColors[clusterId].b * 255)})`,
+                  border: activeCluster === clusterId ? '2px solid black' : 'none'
+                }}
+              />
+              <span className="text-sm text-gray-900">{getClusterName(clusterId)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
       
       {/* Recenter button */}
       <button
@@ -462,14 +713,15 @@ export default function SphereScene() {
       
       {hoveredVector && (
         <div className="absolute top-4 right-4 bg-white/90 p-4 rounded-lg shadow-lg border border-gray-200">
-          <h3 className="font-semibold mb-2 text-black">Vector Information</h3>
+          <h3 className="font-semibold mb-2 text-black">Data Point Information</h3>
           <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
             <div className="text-gray-900">Position X:</div><div className="text-gray-900">{hoveredVector[0]}</div>
             <div className="text-gray-900">Position Y:</div><div className="text-gray-900">{hoveredVector[1]}</div>
             <div className="text-gray-900">Position Z:</div><div className="text-gray-900">{hoveredVector[2]}</div>
-            <div className="text-gray-900">Hue:</div><div className="text-gray-900">{hoveredVector[3]}°</div>
-            <div className="text-gray-900">Saturation:</div><div className="text-gray-900">{hoveredVector[4]}%</div>
-            <div className="text-gray-900">Brightness:</div><div className="text-gray-900">{hoveredVector[5]}%</div>
+            <div className="text-gray-900">Cluster:</div><div className="text-gray-900">{getClusterName(hoveredVector.cluster)}</div>
+            <div className="text-gray-900">Size Factor:</div><div className="text-gray-900">{hoveredVector.size?.toFixed(2)}</div>
+            <div className="text-gray-900">Confidence:</div><div className="text-gray-900">{(hoveredVector.confidence || 0).toFixed(2)}</div>
+            <div className="text-gray-900">Connections:</div><div className="text-gray-900">{hoveredVector.connections?.length || 0}</div>
           </div>
         </div>
       )}
