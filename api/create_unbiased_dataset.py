@@ -4,13 +4,13 @@ from pathlib import Path
 import os
 import random
 
-def create_biased_dataset():
+def create_unbiased_dataset():
     """
-    Creates a biased version of the original dataset by randomly removing 
+    Creates an unbiased version of the original dataset by randomly removing 
     50% of the datapoints from clusters 1, 2, and 3 in the cleaned_resumes.csv file.
     The original cluster files are not modified.
     """
-    print("Creating biased dataset...")
+    print("Creating unbiased dataset...")
     
     # Check if cleaned_resumes.csv exists
     cleaned_file = Path("cleaned_resumes.csv")
@@ -62,7 +62,7 @@ def create_biased_dataset():
         print(f"Identified {len(indices)} rows in cleaned_resumes.csv belonging to cluster {cluster_num}")
     
     # Create a copy of the full dataset
-    df_biased = df_full.copy()
+    df_unbiased = df_full.copy()
     
     # Combine all indices from all clusters
     all_cluster_indices = []
@@ -82,7 +82,7 @@ def create_biased_dataset():
     print(f"Removing {len(indices_to_remove)} entries from clusters {top_clusters}")
     
     # Remove the selected indices
-    df_biased = df_biased.drop(indices_to_remove)
+    df_unbiased = df_unbiased.drop(indices_to_remove)
     
     # Calculate how many entries from each cluster were removed
     removed_counts = {}
@@ -95,13 +95,13 @@ def create_biased_dataset():
             print(f"Removed {len(removed_indices)} entries from cluster {cluster_num}, {remaining} remain")
     
     # Create output directory if it doesn't exist
-    output_dir = Path("biased_dataset")
+    output_dir = Path("unbiased_dataset")
     output_dir.mkdir(exist_ok=True)
     
-    # Save the biased dataset
-    output_file = output_dir / "biased_resumes.csv"
-    df_biased.to_csv(output_file, index=False)
-    print(f"Biased dataset saved to {output_file}")
+    # Save the unbiased dataset
+    output_file = output_dir / "unbiased_resumes.csv"
+    df_unbiased.to_csv(output_file, index=False)
+    print(f"Unbiased dataset saved to {output_file}")
     
     # Save the removed entries as a separate file for reference
     removed_df = df_full.loc[indices_to_remove]
@@ -111,34 +111,34 @@ def create_biased_dataset():
     
     # Print file sizes
     original_size_mb = os.path.getsize(cleaned_file) / (1024 * 1024)
-    biased_size_mb = os.path.getsize(output_file) / (1024 * 1024)
+    unbiased_size_mb = os.path.getsize(output_file) / (1024 * 1024)
     removed_size_mb = os.path.getsize(removed_file) / (1024 * 1024)
     
     print(f"\nFile sizes:")
     print(f"Original cleaned_resumes.csv: {original_size_mb:.2f} MB")
-    print(f"Biased dataset: {biased_size_mb:.2f} MB")
+    print(f"Unbiased dataset: {unbiased_size_mb:.2f} MB")
     print(f"Removed entries: {removed_size_mb:.2f} MB")
     
     # Save summary statistics
     summary = {
         "original_count": len(df_full),
-        "biased_count": len(df_biased),
+        "unbiased_count": len(df_unbiased),
         "removed_count": len(indices_to_remove),
         "removal_percentage": (len(indices_to_remove) / len(df_full)) * 100,
         "cluster_removal_counts": removed_counts,
         "file_sizes": {
             "original_mb": original_size_mb,
-            "biased_mb": biased_size_mb,
+            "unbiased_mb": unbiased_size_mb,
             "removed_mb": removed_size_mb
         }
     }
     
     # Save summary as text file
-    with open(output_dir / "bias_summary.txt", "w") as f:
-        f.write("BIASED DATASET SUMMARY\n")
-        f.write("=====================\n\n")
+    with open(output_dir / "unbiasing_summary.txt", "w") as f:
+        f.write("UNBIASED DATASET SUMMARY\n")
+        f.write("======================\n\n")
         f.write(f"Original dataset size: {summary['original_count']} entries ({original_size_mb:.2f} MB)\n")
-        f.write(f"Biased dataset size: {summary['biased_count']} entries ({biased_size_mb:.2f} MB)\n")
+        f.write(f"Unbiased dataset size: {summary['unbiased_count']} entries ({unbiased_size_mb:.2f} MB)\n")
         f.write(f"Removed entries: {summary['removed_count']} entries ({removed_size_mb:.2f} MB)\n")
         f.write(f"Overall removal percentage: {summary['removal_percentage']:.2f}%\n\n")
         
@@ -151,9 +151,9 @@ def create_biased_dataset():
                 percentage = (count / original) * 100
                 f.write(f"  Cluster {cluster_num}: Removed {count}/{original} entries ({percentage:.2f}%), {remaining} remain\n")
     
-    print(f"Summary saved to {output_dir}/bias_summary.txt")
+    print(f"Summary saved to {output_dir}/unbiasing_summary.txt")
     
-    return df_biased, removed_df
+    return df_unbiased, removed_df
 
 if __name__ == "__main__":
-    create_biased_dataset() 
+    create_unbiased_dataset() 

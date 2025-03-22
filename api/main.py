@@ -6,9 +6,9 @@ import time
 import sys
 
 # Import functions from our other files
-from embeddings import main as embeddings_main
-from cluster_analysis import main as cluster_analysis_main
-from create_biased_dataset import create_biased_dataset
+from api.embeddings import main as embeddings_main
+from api.cluster_analysis import main as cluster_analysis_main
+from api.create_unbiased_dataset import create_unbiased_dataset
 
 # Setup logging
 def setup_logging():
@@ -16,7 +16,7 @@ def setup_logging():
     log_dir.mkdir(exist_ok=True)
     
     timestamp = time.strftime("%Y%m%d-%H%M%S")
-    log_file = log_dir / f"bias_detector_{timestamp}.log"
+    log_file = log_dir / f"unbiasing_pipeline_{timestamp}.log"
     
     # Configure logging to write to both file and console
     logging.basicConfig(
@@ -28,7 +28,7 @@ def setup_logging():
         ]
     )
     
-    logging.info(f"Starting bias detection pipeline. Logs will be saved to {log_file}")
+    logging.info(f"Starting unbiasing pipeline. Logs will be saved to {log_file}")
     return log_file
 
 def count_files_in_dir(directory):
@@ -65,7 +65,7 @@ def report_file_info(file_path):
         return f"{file_path}: {size_mb:.2f} MB"
 
 def main():
-    """Main function to execute the entire bias detection pipeline"""
+    """Main function to execute the entire unbiasing pipeline"""
     # Setup logging
     log_file = setup_logging()
     
@@ -102,17 +102,17 @@ def main():
         if analysis_dir.exists():
             logging.info(f"Cluster analysis directory contents:\n{count_files_in_dir('cluster_analysis')}")
         
-        # Step 3: Create biased dataset
+        # Step 3: Create unbiased dataset
         logging.info("\n" + "=" * 80)
-        logging.info("STEP 3: CREATING BIASED DATASET")
+        logging.info("STEP 3: CREATING UNBIASED DATASET")
         logging.info("=" * 80)
         
-        biased_df, removed_df = create_biased_dataset()
+        unbiased_df, removed_df = create_unbiased_dataset()
         
-        # Report on biased dataset
-        biased_dir = Path("biased_dataset")
-        if biased_dir.exists():
-            logging.info(f"Biased dataset directory contents:\n{count_files_in_dir('biased_dataset')}")
+        # Report on unbiased dataset
+        unbiased_dir = Path("unbiased_dataset")
+        if unbiased_dir.exists():
+            logging.info(f"Unbiased dataset directory contents:\n{count_files_in_dir('unbiased_dataset')}")
         
         # Final summary
         logging.info("\n" + "=" * 80)
@@ -120,15 +120,15 @@ def main():
         logging.info("=" * 80)
         
         logging.info(f"Original dataset: {report_file_info('cleaned_resumes.csv')}")
-        logging.info(f"Biased dataset: {report_file_info('biased_dataset/biased_resumes.csv')}")
-        logging.info(f"Removed entries: {report_file_info('biased_dataset/removed_entries.csv')}")
+        logging.info(f"Unbiased dataset: {report_file_info('unbiased_dataset/unbiased_resumes.csv')}")
+        logging.info(f"Removed entries: {report_file_info('unbiased_dataset/removed_entries.csv')}")
         
-        if os.path.exists('biased_dataset/bias_summary.txt'):
-            with open('biased_dataset/bias_summary.txt', 'r') as f:
+        if os.path.exists('unbiased_dataset/unbiasing_summary.txt'):
+            with open('unbiased_dataset/unbiasing_summary.txt', 'r') as f:
                 summary = f.read()
-                logging.info(f"Bias summary:\n{summary}")
+                logging.info(f"Unbiasing summary:\n{summary}")
         
-        logging.info("Bias detection pipeline completed successfully!")
+        logging.info("Unbiasing pipeline completed successfully!")
         
     except Exception as e:
         logging.error(f"Error in pipeline: {str(e)}", exc_info=True)
