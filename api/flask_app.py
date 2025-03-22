@@ -6,6 +6,10 @@ from pathlib import Path
 
 app = Flask(__name__)
 
+@app.route('/')
+def index():
+    return "Bias Unbiasing API"
+
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Basic health check endpoint"""
