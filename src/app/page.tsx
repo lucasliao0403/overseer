@@ -359,7 +359,7 @@ export default function Home() {
 
   return (
     <main className="relative min-h-screen">
-      <SphereScene />
+      <SphereScene activeTab={activeTab} />
 
       {/* Navigation Tabs */}
       <div className="fixed top-8 left-1/2 transform -translate-x-1/2 z-20">

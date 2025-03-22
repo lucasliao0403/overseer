@@ -47,20 +47,33 @@ const clusterColors = [
   new THREE.Color(0xFF6D01), // Orange
 ];
 
-export default function SphereScene() {
+// Props interface to accept activeTab from parent
+interface SphereSceneProps {
+  activeTab?: string;
+}
+
+export default function SphereScene({ activeTab = "clusters" }: SphereSceneProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const isDraggingRef = useRef(false);
   const rotationRef = useRef({ x: 0, y: 0 });
   const previousMousePositionRef = useRef({ x: 0, y: 0 });
   const [hoveredVector, setHoveredVector] = useState<DataPoint | null>(null);
+  const [selectedVector, setSelectedVector] = useState<DataPoint | null>(null);
   const didMoveRef = useRef(false);
   const hoveredSphereRef = useRef<THREE.Mesh | null>(null);
-  const cameraPositionRef = useRef({ z: 12 }); // Increased default distance
+  const selectedSphereRef = useRef<THREE.Mesh | null>(null);
+  const cameraPositionRef = useRef({ z: 12 });
   const [activeCluster, setActiveCluster] = useState<number | null>(null);
+  
+  // Add velocity tracking for momentum
+  const velocityRef = useRef({ x: 0, y: 0 });
+  const lastTimeRef = useRef(0);
+  const momentumActiveRef = useRef(false);
 
+  // Create scene and other 3D elements only if showing clusters tab
   useEffect(() => {
-    if (!canvasRef.current) return;
-
+    if (activeTab !== "clusters" || !canvasRef.current) return;
+    
     // Scene setup
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xf8f9fa);
@@ -347,7 +360,7 @@ export default function SphereScene() {
     };
     window.addEventListener('resize', handleResize);
 
-    // Add zoom functionality with simpler implementation
+    // Add zoom functionality with infinite zooming
     const handleWheel = (event: WheelEvent) => {
       // Only handle wheel events when mouse is over our canvas
       const canvasElement = canvasRef.current;
@@ -365,21 +378,20 @@ export default function SphereScene() {
       // Prevent default scrolling behavior
       event.preventDefault();
       
-      // Fixed step size for consistent zooming
-      const zoomStep = 0.5;
+      // Use a percentage-based zoom for smoother infinite zooming
+      const zoomFactor = 0.05; // 5% zoom per step
       
       // Determine zoom direction
       const zoomIn = event.deltaY < 0;
       
-      // Update camera position
+      // Update camera position using multiplicative factor for infinite zoom
       if (zoomIn) {
-        camera.position.z -= zoomStep; // Move camera closer
+        camera.position.z *= (1 - zoomFactor); // Zoom in (get closer)
       } else {
-        camera.position.z += zoomStep; // Move camera farther
+        camera.position.z *= (1 + zoomFactor); // Zoom out (get farther)
       }
       
-      // Apply min/max limits
-      camera.position.z = Math.max(3, Math.min(20, camera.position.z));
+      // No min/max limits for infinite zooming
       
       // Update the ref to keep track of camera position
       cameraPositionRef.current.z = camera.position.z;
@@ -422,12 +434,28 @@ export default function SphereScene() {
         );
         
         if (hoveredSphere) {
+          // If we hover over a different sphere than the selected one, clear the selection
+          if (selectedVector && hoveredSphere.dataPoint !== selectedVector) {
+            setSelectedVector(null);
+            
+            if (selectedSphereRef.current) {
+              const prevSelectedData = spheresWithData.find(
+                item => item.sphere === selectedSphereRef.current
+              );
+              if (prevSelectedData) {
+                prevSelectedData.material.uniforms.isHovered.value = false;
+              }
+              selectedSphereRef.current = null;
+            }
+          }
+          
           setHoveredVector(hoveredSphere.dataPoint);
           hoveredSphereRef.current = hoveredSphere.sphere;
           hoveredSphere.material.uniforms.isHovered.value = true;
         }
       } else {
-        // Not hovering over any sphere, clear selection
+        // Not hovering over any sphere, clear hover selection
+        // But keep the selected vector if there is one
         setHoveredVector(null);
       }
     };
@@ -450,6 +478,17 @@ export default function SphereScene() {
       // Calculate objects intersecting the picking ray
       const intersects = raycaster.intersectObjects(sphereGroup.children);
       
+      // Reset previously selected sphere if it exists
+      if (selectedSphereRef.current) {
+        const prevSelectedData = spheresWithData.find(
+          item => item.sphere === selectedSphereRef.current
+        );
+        if (prevSelectedData && prevSelectedData.sphere !== hoveredSphereRef.current) {
+          // Only reset the visual effect if it's not currently being hovered
+          prevSelectedData.material.uniforms.isHovered.value = false;
+        }
+      }
+      
       if (intersects.length > 0) {
         // Find the clicked sphere in our data array
         const clickedSphere = spheresWithData.find(
@@ -457,6 +496,16 @@ export default function SphereScene() {
         );
         
         if (clickedSphere) {
+          // Toggle selection - if already selected, deselect it
+          if (selectedVector && selectedVector === clickedSphere.dataPoint) {
+            setSelectedVector(null);
+          } else {
+            // Otherwise select it
+            setSelectedVector(clickedSphere.dataPoint);
+            selectedSphereRef.current = clickedSphere.sphere;
+            clickedSphere.material.uniforms.isHovered.value = true;
+          }
+          
           const clickedCluster = clickedSphere.dataPoint.cluster;
           
           // Toggle cluster selection
@@ -482,6 +531,44 @@ export default function SphereScene() {
           // Recreate connection lines based on active cluster
           createConnectionLines();
         }
+      } else {
+        // Clicked on empty space, clear selection
+        setSelectedVector(null);
+      }
+    };
+
+    // Handle background click to deselect
+    const handleBackgroundClick = (event: MouseEvent) => {
+      if (didMoveRef.current) return; // Skip if dragging
+      
+      const canvasElement = canvasRef.current;
+      if (!canvasElement) return;
+      
+      // Calculate mouse position in normalized device coordinates (-1 to +1)
+      const rect = canvasElement.getBoundingClientRect();
+      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+      
+      // Update the picking ray with the camera and mouse position
+      raycaster.setFromCamera(mouse, camera);
+      
+      // Calculate objects intersecting the picking ray
+      const intersects = raycaster.intersectObjects(sphereGroup.children);
+      
+      // If we didn't hit any sphere, clear the selection
+      if (intersects.length === 0) {
+        // Reset previously selected sphere if it exists
+        if (selectedSphereRef.current) {
+          const prevSelectedData = spheresWithData.find(
+            item => item.sphere === selectedSphereRef.current
+          );
+          if (prevSelectedData && prevSelectedData.sphere !== hoveredSphereRef.current) {
+            // Only reset the visual effect if it's not currently being hovered
+            prevSelectedData.material.uniforms.isHovered.value = false;
+          }
+        }
+        setSelectedVector(null);
+        selectedSphereRef.current = null;
       }
     };
 
@@ -493,6 +580,11 @@ export default function SphereScene() {
         x: event.clientX,
         y: event.clientY,
       };
+      
+      // Stop any ongoing momentum when user starts dragging
+      momentumActiveRef.current = false;
+      velocityRef.current = { x: 0, y: 0 };
+      lastTimeRef.current = performance.now();
     };
 
     const handleMouseMove = (event: MouseEvent) => {
@@ -500,6 +592,10 @@ export default function SphereScene() {
       handleSphereHover(event);
       
       if (!isDraggingRef.current) return;
+      
+      const currentTime = performance.now();
+      const deltaTime = currentTime - lastTimeRef.current;
+      lastTimeRef.current = currentTime;
       
       const deltaX = event.clientX - previousMousePositionRef.current.x;
       const deltaY = event.clientY - previousMousePositionRef.current.y;
@@ -509,6 +605,13 @@ export default function SphereScene() {
         didMoveRef.current = true;
       }
       
+      // Calculate velocity (pixels per millisecond)
+      if (deltaTime > 0) {
+        velocityRef.current.x = deltaX / deltaTime;
+        velocityRef.current.y = deltaY / deltaTime;
+      }
+      
+      // Apply rotation
       rotationRef.current.y += deltaX * 0.006;
       rotationRef.current.x += deltaY * 0.006;
       
@@ -521,7 +624,20 @@ export default function SphereScene() {
     const handleMouseUp = (event: MouseEvent) => {
       if (!didMoveRef.current) {
         handleSphereClick(event);
+        handleBackgroundClick(event);
+      } else if (didMoveRef.current) {
+        // Start momentum if we were moving
+        const speed = Math.sqrt(
+          velocityRef.current.x * velocityRef.current.x + 
+          velocityRef.current.y * velocityRef.current.y
+        );
+        
+        // Only apply momentum if speed is above a threshold
+        if (speed > 0.05) {
+          momentumActiveRef.current = true;
+        }
       }
+      
       isDraggingRef.current = false;
     };
 
@@ -534,6 +650,11 @@ export default function SphereScene() {
           x: event.touches[0].clientX,
           y: event.touches[0].clientY,
         };
+        
+        // Stop any ongoing momentum when user starts dragging
+        momentumActiveRef.current = false;
+        velocityRef.current = { x: 0, y: 0 };
+        lastTimeRef.current = performance.now();
       }
     };
 
@@ -550,12 +671,22 @@ export default function SphereScene() {
       
       if (!isDraggingRef.current || event.touches.length !== 1) return;
       
+      const currentTime = performance.now();
+      const deltaTime = currentTime - lastTimeRef.current;
+      lastTimeRef.current = currentTime;
+      
       const deltaX = event.touches[0].clientX - previousMousePositionRef.current.x;
       const deltaY = event.touches[0].clientY - previousMousePositionRef.current.y;
       
       // If the user moved more than a few pixels, count as dragging rather than clicking
       if (Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5) {
         didMoveRef.current = true;
+      }
+      
+      // Calculate velocity (pixels per millisecond)
+      if (deltaTime > 0) {
+        velocityRef.current.x = deltaX / deltaTime;
+        velocityRef.current.y = deltaY / deltaTime;
       }
       
       rotationRef.current.y += deltaX * 0.003;
@@ -576,7 +707,19 @@ export default function SphereScene() {
           clientY: touch.clientY
         });
         handleMouseUp(mouseEvent);
+      } else if (didMoveRef.current) {
+        // Start momentum if we were moving
+        const speed = Math.sqrt(
+          velocityRef.current.x * velocityRef.current.x + 
+          velocityRef.current.y * velocityRef.current.y
+        );
+        
+        // Only apply momentum if speed is above a threshold
+        if (speed > 0.05) {
+          momentumActiveRef.current = true;
+        }
       }
+      
       isDraggingRef.current = false;
     };
 
@@ -651,6 +794,27 @@ export default function SphereScene() {
         material.uniforms.time.value = elapsedTime;
       });
       
+      // Apply momentum if active
+      if (momentumActiveRef.current) {
+        // Apply velocity with decay
+        rotationRef.current.y += velocityRef.current.x * 0.006 * 16; // Scale to match mouse movement
+        rotationRef.current.x += velocityRef.current.y * 0.006 * 16;
+        
+        // Apply decay factor
+        const decayFactor = 0.95;
+        velocityRef.current.x *= decayFactor;
+        velocityRef.current.y *= decayFactor;
+        
+        // Stop momentum when velocity gets very small
+        if (
+          Math.abs(velocityRef.current.x) < 0.001 && 
+          Math.abs(velocityRef.current.y) < 0.001
+        ) {
+          momentumActiveRef.current = false;
+          velocityRef.current = { x: 0, y: 0 };
+        }
+      }
+      
       // Apply rotation to the sphere group
       sphereGroup.rotation.x = rotationRef.current.x;
       sphereGroup.rotation.y = rotationRef.current.y;
@@ -693,7 +857,7 @@ export default function SphereScene() {
       // Remove the global recenter function
       delete window.recenterCamera;
     };
-  }, [activeCluster]);
+  }, [activeTab, activeCluster]);
 
   // Function to handle recenter button click
   const handleRecenter = () => {
@@ -709,6 +873,72 @@ export default function SphereScene() {
     return clusterNames[clusterId % clusterNames.length];
   };
 
+  // If we're on the bias analysis tab, render the bias analysis screen
+  if (activeTab === "bias") {
+    return (
+      <div className="min-h-screen bg-gray-50 p-6 pt-24">
+        <div className="max-w-6xl mx-auto">
+          <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+            <h2 className="text-xl font-semibold mb-4">Embedding Space Analysis</h2>
+            <p className="text-gray-700 mb-4">
+              This analysis examines the distribution of data points in the embedding space to identify potential biases.
+            </p>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h3 className="font-medium mb-2">Cluster Distribution</h3>
+                <div className="h-64 bg-gray-200 rounded flex items-center justify-center">
+                  [Placeholder for cluster distribution chart]
+                </div>
+              </div>
+              
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h3 className="font-medium mb-2">Demographic Analysis</h3>
+                <div className="h-64 bg-gray-200 rounded flex items-center justify-center">
+                  [Placeholder for demographic analysis chart]
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-xl shadow-lg p-6">
+            <h2 className="text-xl font-semibold mb-4">Bias Metrics</h2>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <div className="border border-gray-200 rounded-lg p-4">
+                <h3 className="font-medium text-gray-900">Gender Bias Score</h3>
+                <div className="text-3xl font-bold text-blue-600 mt-2">0.82</div>
+                <p className="text-sm text-gray-500 mt-1">Lower is better (0-1 scale)</p>
+              </div>
+              
+              <div className="border border-gray-200 rounded-lg p-4">
+                <h3 className="font-medium text-gray-900">Age Bias Score</h3>
+                <div className="text-3xl font-bold text-green-600 mt-2">0.65</div>
+                <p className="text-sm text-gray-500 mt-1">Lower is better (0-1 scale)</p>
+              </div>
+              
+              <div className="border border-gray-200 rounded-lg p-4">
+                <h3 className="font-medium text-gray-900">Ethnicity Bias Score</h3>
+                <div className="text-3xl font-bold text-orange-600 mt-2">0.78</div>
+                <p className="text-sm text-gray-500 mt-1">Lower is better (0-1 scale)</p>
+              </div>
+            </div>
+            
+            <div className="bg-blue-50 p-4 rounded-lg">
+              <h3 className="font-medium text-blue-800 mb-2">Recommendations</h3>
+              <ul className="list-disc pl-5 text-blue-700 space-y-1">
+                <li>Consider rebalancing your dataset to address gender representation</li>
+                <li>Review language patterns in job descriptions that may contribute to bias</li>
+                <li>Implement additional fairness constraints in your model training</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Otherwise, render the 3D visualization
   return (
     <main className="relative min-h-screen">
       <canvas 
@@ -747,17 +977,26 @@ export default function SphereScene() {
         </button>
       </div>
       
-      {hoveredVector && (
+      {/* Show data point information when hovering OR when a point is selected */}
+      {(hoveredVector || selectedVector) && (
         <div className="absolute top-4 right-4 bg-white/90 p-4 rounded-lg shadow-lg border border-gray-200">
           <h3 className="font-semibold mb-2 text-black">Data Point Information</h3>
           <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-            <div className="text-gray-900">Position X:</div><div className="text-gray-900">{hoveredVector[0]}</div>
-            <div className="text-gray-900">Position Y:</div><div className="text-gray-900">{hoveredVector[1]}</div>
-            <div className="text-gray-900">Position Z:</div><div className="text-gray-900">{hoveredVector[2]}</div>
-            <div className="text-gray-900">Cluster:</div><div className="text-gray-900">{getClusterName(hoveredVector.cluster)}</div>
-            <div className="text-gray-900">Size Factor:</div><div className="text-gray-900">{hoveredVector.size?.toFixed(2)}</div>
-            <div className="text-gray-900">Confidence:</div><div className="text-gray-900">{(hoveredVector.confidence || 0).toFixed(2)}</div>
-            <div className="text-gray-900">Connections:</div><div className="text-gray-900">{hoveredVector.connections?.length || 0}</div>
+            {/* Display information for either the hovered or selected vector */}
+            {(() => {
+              const vector = hoveredVector || selectedVector;
+              return (
+                <>
+                  <div className="text-gray-900">Position X:</div><div className="text-gray-900">{vector[0]}</div>
+                  <div className="text-gray-900">Position Y:</div><div className="text-gray-900">{vector[1]}</div>
+                  <div className="text-gray-900">Position Z:</div><div className="text-gray-900">{vector[2]}</div>
+                  <div className="text-gray-900">Cluster:</div><div className="text-gray-900">{getClusterName(vector.cluster)}</div>
+                  <div className="text-gray-900">Size Factor:</div><div className="text-gray-900">{vector.size?.toFixed(2)}</div>
+                  <div className="text-gray-900">Confidence:</div><div className="text-gray-900">{(vector.confidence || 0).toFixed(2)}</div>
+                  <div className="text-gray-900">Connections:</div><div className="text-gray-900">{vector.connections?.length || 0}</div>
+                </>
+              );
+            })()}
           </div>
         </div>
       )}
