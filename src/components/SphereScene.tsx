@@ -291,10 +291,10 @@ export default function SphereScene() {
           
           // Create line material with opacity based on similarity
           const material = new THREE.LineBasicMaterial({ 
-            color: 0x999999,
+            color: 0x333333, // Even darker color (changed from 0x555555)
             transparent: true,
-            opacity: 0.1 + similarity * 0.3, // Adjust opacity based on similarity
-            linewidth: 1
+            opacity: 0.5 + similarity * 0.4, // Increased base opacity from 0.3 to 0.5
+            linewidth: 3 // Increased line width from 2 to 3
           });
           
           const line = new THREE.Line(geometry, material);
@@ -346,7 +346,7 @@ export default function SphereScene() {
       }
       
       // Apply min/max limits
-      camera.position.z = Math.max(2, Math.min(30, camera.position.z));
+      camera.position.z = Math.max(3, Math.min(20, camera.position.z));
       
       // Update the ref to keep track of camera position
       cameraPositionRef.current.z = camera.position.z;
