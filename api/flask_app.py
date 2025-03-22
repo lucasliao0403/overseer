@@ -299,7 +299,7 @@ def upload_file():
         # Run the pipeline asynchronously
         # This will be a non-blocking call
         subprocess.Popen(
-            ["python", "api/main.py", "--input", str(file_path), "--job_id", upload_id],
+            ["python", "./main.py", "--input", str(file_path), "--job_id", upload_id],
             # Redirect output to a log file
             stdout=open(upload_dir / "pipeline.log", "w"),
             stderr=subprocess.STDOUT

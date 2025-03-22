@@ -2,10 +2,63 @@
 
 import SphereScene from "../components/SphereScene";
 import { useEffect, useState, useRef } from "react";
-import { getCleanedResumes, getUnbiasingSummary } from "../api/apiClient";
+import {
+  getCleanedResumes,
+  getUnbiasingSummary,
+  uploadDataset,
+  getJobStatus,
+  downloadFile,
+  saveFile,
+  getAllClusterAnalyses,
+  getAllClustersInfo,
+} from "../api/apiClient";
+
+// Define interfaces for our API responses
+interface Resume {
+  id: number;
+  Resume_str: string;
+  Category?: string;
+  [key: string]: any; // For any other properties
+}
+
+interface ResumesResponse {
+  records: Resume[];
+  total_records?: number;
+  total_pages?: number;
+  page?: number;
+  page_size?: number;
+}
+
+interface SummaryResponse {
+  summary: string;
+}
+
+interface JobStatusResponse {
+  job_id: string;
+  status: string;
+  log?: string;
+}
+
+interface UploadResponse {
+  message: string;
+  job_id: string;
+  rows_count: number;
+  status: string;
+}
+
+// Add this interface to properly type the clusters info response
+interface ClustersInfoResponse {
+  clusters: {
+    [clusterId: string]: {
+      size: number;
+      center: number[];
+      [key: string]: any;
+    };
+  };
+}
 
 export default function Home() {
-  const [resumes, setResumes] = useState<any[]>([]);
+  const [resumes, setResumes] = useState<Resume[]>([]);
   const [summary, setSummary] = useState<string>("");
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [showUploadModal, setShowUploadModal] = useState<boolean>(false);
@@ -13,15 +66,27 @@ export default function Home() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [activeTab, setActiveTab] = useState<string>("clusters");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [jobStatus, setJobStatus] = useState<string | null>(null);
+  const [processingLog, setProcessingLog] = useState<string>("");
 
   useEffect(() => {
     const fetchData = async () => {
-      const resumesData = await getCleanedResumes(1, 10);
-      const summary = await getUnbiasingSummary();
+      try {
+        const resumesData = (await getCleanedResumes(1, 10)) as ResumesResponse;
+        const summaryData = (await getUnbiasingSummary()) as SummaryResponse;
 
-      // Update state with the data
-      setResumes((resumesData as any[]) || []);
-      setSummary((summary as string) || "");
+        // Update state with the data
+        if (resumesData && resumesData.records) {
+          setResumes(resumesData.records);
+        }
+
+        if (summaryData && summaryData.summary) {
+          setSummary(summaryData.summary);
+        }
+      } catch (error) {
+        console.error("Error fetching initial data:", error);
+      }
     };
 
     fetchData();
@@ -34,37 +99,100 @@ export default function Home() {
     console.log(summary);
   }
 
+  // Poll for job status updates
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+
+    if (jobId && ["processing", "running"].includes(jobStatus || "")) {
+      interval = setInterval(async () => {
+        try {
+          const status = (await getJobStatus(jobId)) as JobStatusResponse;
+          setJobStatus(status.status);
+          setProcessingLog(status.log || "");
+
+          if (status.status === "completed") {
+            // Refresh data when job completes
+            const resumesData = (await getCleanedResumes(
+              1,
+              10
+            )) as ResumesResponse;
+            const summaryData =
+              (await getUnbiasingSummary()) as SummaryResponse;
+
+            if (resumesData && resumesData.records) {
+              setResumes(resumesData.records);
+            }
+
+            if (summaryData && summaryData.summary) {
+              setSummary(summaryData.summary);
+            }
+
+            // Fetch all cluster data at once
+            try {
+              // Get all cluster analyses in one call
+              const clusterAnalyses = await getAllClusterAnalyses();
+              console.log("Retrieved all cluster analyses:", clusterAnalyses);
+
+              // Get full clusters info in one call
+              const clustersInfo =
+                (await getAllClustersInfo()) as ClustersInfoResponse;
+              console.log("Retrieved complete clusters info:", clustersInfo);
+
+              if (
+                clustersInfo &&
+                typeof clustersInfo === "object" &&
+                "clusters" in clustersInfo
+              ) {
+                // Log the number of clusters found
+                const clusterIds = Object.keys(clustersInfo.clusters);
+                console.log(`Found ${clusterIds.length} clusters in total`);
+
+                // We now have all cluster data at once - no need for individual fetches
+                console.log("All cluster data successfully retrieved in bulk");
+              }
+            } catch (error) {
+              console.error("Error fetching cluster data:", error);
+            }
+
+            setIsLoading(false);
+          } else if (status.status === "failed") {
+            setIsLoading(false);
+            alert("Processing failed. Please check the logs.");
+          }
+        } catch (error) {
+          console.error("Error checking job status:", error);
+        }
+      }, 2000); // Check every 2 seconds
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [jobId, jobStatus]);
+
   const handleUpload = async () => {
     if (!uploadedFile) {
       setShowUploadModal(true);
       return;
     }
-    
-    setIsLoading(true);
-    try {
-      // Placeholder for CSV processing functionality
-      console.log('Processing CSV file:', uploadedFile.name);
-      // Implementation would go here
-      alert(`CSV file "${uploadedFile.name}" processed successfully`);
-      setShowUploadModal(false);
-    } catch (error) {
-      console.error('Error processing file:', error);
-      alert('Error processing file');
-    } finally {
-      setIsLoading(false);
-    }
+
+    processUpload();
   };
 
   const handleFilter = async () => {
     setIsLoading(true);
     try {
-      // Placeholder for filter functionality
-      console.log('Filtering files...');
-      // Implementation would go here
-      alert('Files filtered successfully');
+      // For now, we're just downloading the unbiased dataset
+      const blob = await downloadFile("unbiased_resumes");
+      if (blob) {
+        saveFile(blob, "unbiased_resumes.csv");
+        alert("Unbiased dataset downloaded successfully");
+      } else {
+        alert("Unbiased dataset not available. Please process a file first.");
+      }
     } catch (error) {
-      console.error('Error filtering files:', error);
-      alert('Error filtering files');
+      console.error("Error filtering files:", error);
+      alert("Error filtering files");
     } finally {
       setIsLoading(false);
     }
@@ -73,13 +201,17 @@ export default function Home() {
   const handleDownload = async () => {
     setIsLoading(true);
     try {
-      // Placeholder for download functionality
-      console.log('Downloading files...');
-      // Implementation would go here
-      alert('Files downloaded successfully');
+      // Download the summary text
+      const blob = await downloadFile("summary");
+      if (blob) {
+        saveFile(blob, "unbiasing_summary.txt");
+        alert("Summary downloaded successfully");
+      } else {
+        alert("Summary not available. Please process a file first.");
+      }
     } catch (error) {
-      console.error('Error downloading files:', error);
-      alert('Error downloading files');
+      console.error("Error downloading files:", error);
+      alert("Error downloading files");
     } finally {
       setIsLoading(false);
     }
@@ -88,8 +220,8 @@ export default function Home() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.type !== 'text/csv' && !file.name.endsWith('.csv')) {
-        alert('Please upload a CSV file');
+      if (file.type !== "text/csv" && !file.name.endsWith(".csv")) {
+        alert("Please upload a CSV file");
         return;
       }
       setUploadedFile(file);
@@ -109,11 +241,11 @@ export default function Home() {
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(false);
-    
+
     const file = e.dataTransfer.files?.[0];
     if (file) {
-      if (file.type !== 'text/csv' && !file.name.endsWith('.csv')) {
-        alert('Please upload a CSV file');
+      if (file.type !== "text/csv" && !file.name.endsWith(".csv")) {
+        alert("Please upload a CSV file");
         return;
       }
       setUploadedFile(file);
@@ -124,23 +256,35 @@ export default function Home() {
     fileInputRef.current?.click();
   };
 
-  const processUpload = () => {
+  const processUpload = async () => {
     if (!uploadedFile) {
-      alert('Please select a CSV file first');
+      alert("Please select a CSV file first");
       return;
     }
-    
+
     setIsLoading(true);
     try {
-      // Placeholder for CSV processing functionality
-      console.log('Processing CSV file:', uploadedFile.name);
-      // Implementation would go here
-      alert(`CSV file "${uploadedFile.name}" processed successfully`);
-      setShowUploadModal(false);
-      setUploadedFile(null);
+      // Upload the file to the backend
+      const response = (await uploadDataset(uploadedFile)) as UploadResponse;
+
+      if (response && response.job_id) {
+        setJobId(response.job_id);
+        setJobStatus("processing");
+
+        // Keep modal open to show progress
+        alert(
+          `File "${uploadedFile.name}" uploaded successfully. Processing started with job ID: ${response.job_id}`
+        );
+      } else {
+        throw new Error("Invalid response from server");
+      }
     } catch (error) {
-      console.error('Error processing file:', error);
-      alert('Error processing file');
+      console.error("Error processing file:", error);
+      alert(
+        `Error processing file: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
     } finally {
       setIsLoading(false);
     }
@@ -156,8 +300,8 @@ export default function Home() {
           <button
             onClick={() => setActiveTab("clusters")}
             className={`px-8 py-3 rounded-full text-lg font-medium transition-all ${
-              activeTab === "clusters" 
-                ? "bg-black text-white" 
+              activeTab === "clusters"
+                ? "bg-black text-white"
                 : "bg-transparent text-gray-700 hover:bg-gray-100"
             }`}
           >
@@ -166,8 +310,8 @@ export default function Home() {
           <button
             onClick={() => setActiveTab("bias")}
             className={`px-8 py-3 rounded-full text-lg font-medium transition-all ${
-              activeTab === "bias" 
-                ? "bg-black text-white" 
+              activeTab === "bias"
+                ? "bg-black text-white"
                 : "bg-transparent text-gray-700 hover:bg-gray-100"
             }`}
           >
@@ -183,105 +327,154 @@ export default function Home() {
           disabled={isLoading}
           className="px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800 transition-all hover:scale-110 disabled:opacity-50"
         >
-          {isLoading ? 'Processing...' : 'Upload'}
+          {isLoading ? "Processing..." : "Upload"}
         </button>
         <button
           onClick={handleFilter}
           disabled={isLoading}
           className="px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800 transition-all hover:scale-110 disabled:opacity-50"
         >
-          {isLoading ? 'Processing...' : 'Filter'}
+          {isLoading ? "Processing..." : "Get Unbiased Data"}
         </button>
         <button
           onClick={handleDownload}
           disabled={isLoading}
           className="px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800 transition-all hover:scale-110 disabled:opacity-50"
         >
-          {isLoading ? 'Processing...' : 'Download'}
+          {isLoading ? "Processing..." : "Download Summary"}
         </button>
       </div>
+
+      {/* Status display if there's an active job */}
+      {jobId && jobStatus && (
+        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-20 bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg">
+          <h3 className="text-lg font-bold mb-2">
+            Job Status: {jobStatus.charAt(0).toUpperCase() + jobStatus.slice(1)}
+          </h3>
+          <p className="text-sm">Job ID: {jobId}</p>
+          {processingLog && (
+            <div className="mt-2">
+              <details>
+                <summary className="cursor-pointer text-blue-500">
+                  View logs
+                </summary>
+                <pre className="mt-2 text-xs bg-gray-100 dark:bg-gray-900 p-2 rounded max-h-40 overflow-auto">
+                  {processingLog}
+                </pre>
+              </details>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Upload Modal with Backdrop Blur */}
       {showUploadModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           {/* Blurred backdrop */}
-          <div 
+          <div
             className="absolute inset-0 bg-black/30 backdrop-blur-sm"
             onClick={() => setShowUploadModal(false)}
           ></div>
-          
+
           {/* Modal content - updated to match the screenshot */}
           <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden transform transition-all duration-300 ease-out animate-fadeIn">
             <div className="p-8">
               <div className="flex justify-between items-center mb-6">
-                <h3 className="text-2xl font-semibold text-gray-900">Upload CSV Data</h3>
-                <button 
+                <h3 className="text-2xl font-semibold text-gray-900">
+                  Upload CSV Data
+                </h3>
+                <button
                   onClick={() => setShowUploadModal(false)}
                   className="text-gray-500 hover:text-gray-700 transition-colors"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-6 w-6"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M6 18L18 6M6 6l12 12"
+                    />
                   </svg>
                 </button>
               </div>
-              
+
               {/* Drag and drop area - updated to match the screenshot */}
-              <div 
+              <div
                 className={`border-2 border-dashed border-gray-300 rounded-lg p-10 text-center cursor-pointer transition-colors mb-8 ${
-                  isDragging 
-                    ? 'border-blue-500 bg-blue-50' 
-                    : 'hover:border-blue-500'
+                  isDragging
+                    ? "border-blue-500 bg-blue-50"
+                    : "hover:border-blue-500"
                 }`}
                 onClick={triggerFileInput}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
               >
-                <input 
-                  type="file" 
+                <input
+                  type="file"
                   ref={fileInputRef}
-                  className="hidden" 
-                  accept=".csv" 
+                  className="hidden"
+                  accept=".csv"
                   onChange={handleFileChange}
                 />
-                
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mx-auto text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-16 w-16 mx-auto text-gray-400 mb-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                  />
                 </svg>
-                
+
                 <p className="text-lg text-gray-700 font-medium mb-1">
-                  {uploadedFile 
-                    ? `Selected: ${uploadedFile.name}` 
-                    : 'Drop your CSV file here or click to browse'
-                  }
+                  {uploadedFile
+                    ? `Selected: ${uploadedFile.name}`
+                    : "Drop your CSV file here or click to browse"}
                 </p>
-                <p className="text-sm text-gray-500">Supports CSV files only</p>
+                <p className="text-sm text-gray-500">
+                  Supports CSV files with Resume_str column
+                </p>
               </div>
-              
+
               {/* Format example - updated to match the screenshot */}
               <div className="mb-8">
                 <p className="text-lg text-gray-700 mb-2">Expected format:</p>
                 <div className="bg-gray-100 p-4 rounded-lg text-sm font-mono overflow-x-auto text-gray-700 mb-2">
-                  x,y,z,h,s,b,size,cluster,confidence<br/>
-                  0.1,0.2,0.3,180,50,80,1.2,0,0.95<br/>
+                  id,Resume_str,Category
+                  <br />
+                  1,"I am a software engineer with 5 years of experience...",IT
+                  <br />
                   ...
                 </div>
               </div>
-              
+
               {/* Action buttons - updated to match the screenshot */}
               <div className="flex justify-end space-x-4">
-                <button 
+                <button
                   onClick={() => setShowUploadModal(false)}
                   className="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors text-lg"
                 >
                   Cancel
                 </button>
-                <button 
+                <button
                   onClick={processUpload}
                   disabled={!uploadedFile || isLoading}
                   className="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-lg"
                 >
-                  {isLoading ? 'Processing...' : 'Process CSV'}
+                  {isLoading ? "Processing..." : "Process CSV"}
                 </button>
               </div>
             </div>

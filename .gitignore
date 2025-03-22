@@ -58,3 +58,9 @@ cluster_visualization.png
 all_clusters_analysis.json
 *analysis.txt
 *summary.txt
+uploads/
+cluster_analysis/
+clusters/
+logs/
+unbiased_dataset/
+*.pyc
