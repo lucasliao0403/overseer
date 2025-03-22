@@ -97,6 +97,7 @@ export default function SphereScene() {
       varying vec2 vUv;
       uniform float time;
       uniform float pulseIntensity;
+      uniform bool isActiveCluster;
       
       void main() {
         vNormal = normalize(normalMatrix * normal);
@@ -107,7 +108,14 @@ export default function SphereScene() {
         vec3 newPosition = position + normal * sin(position.x * 10.0 + time * 2.0) * 0.01;
         
         // Add pulsing effect for cluster highlighting
-        newPosition += normal * sin(time * 3.0) * pulseIntensity * 0.05;
+        float pulseFactor = 0.0;
+        if (isActiveCluster) {
+          // Create a pulsing effect
+          pulseFactor = sin(time * 2.0) * 0.5 + 0.5; // Oscillates between 0 and 1
+          
+          // Add a smaller base size increase (15%) plus a smaller pulsing component (15%)
+          newPosition += normal * (0.02 + pulseFactor * 0.10) * pulseIntensity;
+        }
         
         gl_Position = projectionMatrix * modelViewMatrix * vec4(newPosition, 1.0);
       }
@@ -250,6 +258,31 @@ export default function SphereScene() {
       });
     });
 
+    // Function to handle cluster selection from the panel
+    const handleClusterSelect = (clusterId: number) => {
+      // Toggle cluster selection
+      setActiveCluster(activeCluster === clusterId ? null : clusterId);
+    };
+
+    // Update spheres based on active cluster
+    const updateSpheresForActiveCluster = () => {
+      spheresWithData.forEach(({ material, dataPoint }) => {
+        // A sphere is active if it belongs to the active cluster
+        const isActive = activeCluster !== null && dataPoint.cluster === activeCluster;
+        material.uniforms.isActiveCluster.value = isActive;
+        
+        // Add pulsing effect to spheres in the active cluster
+        if (isActive) {
+          material.uniforms.pulseIntensity.value = 1.0;
+        } else {
+          material.uniforms.pulseIntensity.value = 0.0;
+        }
+      });
+      
+      // Recreate connection lines based on active cluster
+      createConnectionLines();
+    };
+
     // Create connection lines between related data points
     const createConnectionLines = () => {
       // Remove existing lines
@@ -291,10 +324,10 @@ export default function SphereScene() {
           
           // Create line material with opacity based on similarity
           const material = new THREE.LineBasicMaterial({ 
-            color: 0x333333, // Even darker color (changed from 0x555555)
+            color: 0x333333, // Even darker color
             transparent: true,
-            opacity: 0.5 + similarity * 0.4, // Increased base opacity from 0.3 to 0.5
-            linewidth: 3 // Increased line width from 2 to 3
+            opacity: 0.5 + similarity * 0.4, // Increased base opacity
+            linewidth: 3 // Increased line width
           });
           
           const line = new THREE.Line(geometry, material);
@@ -555,6 +588,9 @@ export default function SphereScene() {
     window.addEventListener('touchmove', handleTouchMove);
     window.addEventListener('touchend', handleTouchEnd);
 
+    // Watch for changes to activeCluster
+    updateSpheresForActiveCluster();
+
     // Expose a function to reset camera and rotation
     window.recenterCamera = () => {
       // Store starting values for animation
@@ -597,7 +633,7 @@ export default function SphereScene() {
       
       // Update all spheres' active cluster state
       spheresWithData.forEach(({ material }) => {
-        material.uniforms.isActiveCluster.value = true;
+        material.uniforms.isActiveCluster.value = false;
         material.uniforms.pulseIntensity.value = 0.0;
       });
       
