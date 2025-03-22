@@ -55,4 +55,6 @@ pythonenv/
 cluster_sizes.png
 cluster_visualization.png
 *.log
-*_analysis.txt
+all_clusters_analysis.json
+*analysis.txt
+*summary.txt

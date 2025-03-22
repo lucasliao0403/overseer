@@ -4,6 +4,7 @@ import cohere
 from dotenv import load_dotenv
 import json
 from pathlib import Path
+import numpy as np
 
 # Load environment variables from .env file
 load_dotenv()
@@ -76,6 +77,74 @@ def analyze_cluster(cluster_df, cluster_num):
         # Return error message as the analysis result
         return f"ANALYSIS FAILED: {error_message}\n\nPlease check cohere_api_errors.log for details."
 
+def export_complete_dataset(cluster_files):
+    """
+    Export the original dataset with cluster information
+    """
+    print("Exporting complete dataset with cluster information...")
+    
+    # First, load all individual cluster files to get the mapping
+    cluster_mapping = {}
+    for cluster_file in cluster_files:
+        cluster_num = int(cluster_file.stem.split("_")[1])
+        cluster_df = pd.read_csv(cluster_file)
+        
+        # Get original indices if available or row numbers otherwise
+        if 'Unnamed: 0' in cluster_df.columns:
+            indices = cluster_df['Unnamed: 0'].tolist()
+        else:
+            # Create a synthetic index based on row position
+            indices = cluster_df.index.tolist()
+            
+        # Map these indices to this cluster
+        for idx in indices:
+            cluster_mapping[idx] = cluster_num
+    
+    # Load the original dataset
+    try:
+        # Try cleaned file first (should exist from embeddings.py)
+        if os.path.exists('cleaned_resumes.csv'):
+            print("Loading cleaned_resumes.csv...")
+            df = pd.read_csv('cleaned_resumes.csv')
+        else:
+            # Try original source
+            print("Loading original dataset...")
+            try:
+                df = pd.read_csv("hf://datasets/sankar12345/Resume-Dataset/Resume.csv")
+            except Exception:
+                print("Trying local file...")
+                df = pd.read_csv("Resume.csv")
+    except Exception as e:
+        print(f"Error loading dataset: {e}")
+        return
+    
+    # Add cluster information
+    df['cluster'] = -1  # Default to noise/unclustered
+    
+    # Map indices to clusters
+    for i, row in df.iterrows():
+        if i in cluster_mapping:
+            df.at[i, 'cluster'] = cluster_mapping[i]
+    
+    # Create the clusters directory if it doesn't exist
+    clusters_dir = Path("clusters")
+    clusters_dir.mkdir(exist_ok=True)
+    
+    # Save the complete dataset with cluster information
+    complete_file = clusters_dir / "all_clusters.csv"
+    df.to_csv(complete_file, index=False)
+    print(f"Saved complete dataset with cluster information to {complete_file}")
+    
+    # Print cluster distribution
+    cluster_counts = df['cluster'].value_counts().sort_index()
+    print("\nCluster distribution:")
+    for cluster, count in cluster_counts.items():
+        if cluster != -1:
+            print(f"Cluster {cluster}: {count} entries")
+    print(f"Noise/Unclustered: {cluster_counts.get(-1, 0)} entries")
+    
+    return df
+
 def main():
     # Create directory for analysis results
     output_dir = Path("cluster_analysis")
@@ -97,6 +166,9 @@ def main():
         return
     
     print(f"Found {len(cluster_files)} cluster files.")
+    
+    # Export complete dataset with cluster information
+    export_complete_dataset(cluster_files)
     
     # Analyze each cluster
     all_analyses = {}
