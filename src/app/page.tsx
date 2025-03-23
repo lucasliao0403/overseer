@@ -89,8 +89,11 @@ export default function Home() {
   const [aggressiveness, setAggressiveness] = useState<number>(50); // Default aggressiveness (0-100)
   const [isTabTransitioning, setIsTabTransitioning] = useState<boolean>(false);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
-  const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'processing' | 'complete' | 'error'>('idle');
-  const [showSuccessNotification, setShowSuccessNotification] = useState<boolean>(false);
+  const [uploadStatus, setUploadStatus] = useState<
+    "idle" | "uploading" | "processing" | "complete" | "error"
+  >("idle");
+  const [showSuccessNotification, setShowSuccessNotification] =
+    useState<boolean>(false);
   const [showDefaultObjects, setShowDefaultObjects] = useState<boolean>(true);
 
   useEffect(() => {
@@ -127,7 +130,7 @@ export default function Home() {
     let interval: NodeJS.Timeout;
 
     if (jobId && ["processing", "running"].includes(jobStatus || "")) {
-      setUploadStatus('processing');
+      setUploadStatus("processing");
       interval = setInterval(async () => {
         try {
           const status = (await getJobStatus(jobId)) as JobStatusResponse;
@@ -135,9 +138,9 @@ export default function Home() {
           setProcessingLog(status.log || "");
 
           if (status.status === "completed") {
-            setUploadStatus('complete');
+            setUploadStatus("complete");
             setShowSuccessNotification(true);
-            
+
             // Refresh data when job completes
             const resumesData = (await getCleanedResumes(
               1,
@@ -182,26 +185,26 @@ export default function Home() {
             }
 
             setIsLoading(false);
-            
+
             // Clear job ID after successful completion - reduced from 3000ms to 2000ms
             setTimeout(() => {
               setJobId(null);
               setJobStatus(null);
             }, 2000);
-            
+
             // Clear the success message after animation completes - reduced from 3500ms to 2000ms
             setTimeout(() => {
-              setUploadStatus('idle');
+              setUploadStatus("idle");
               setShowSuccessNotification(false);
             }, 2000);
             setShowDefaultObjects(false);
           } else if (status.status === "failed") {
-            setUploadStatus('error');
+            setUploadStatus("error");
             setIsLoading(false);
           }
         } catch (error) {
           console.error("Error checking job status:", error);
-          setUploadStatus('error');
+          setUploadStatus("error");
         }
       }, 2000); // Check every 2 seconds
     }
@@ -294,11 +297,11 @@ export default function Home() {
 
     setIsLoading(true);
     setShowUploadModal(false);
-    setUploadStatus('uploading');
-    
+    setUploadStatus("uploading");
+
     // Simulate upload progress
     const progressInterval = setInterval(() => {
-      setUploadProgress(prev => {
+      setUploadProgress((prev) => {
         if (prev >= 90) {
           clearInterval(progressInterval);
           return 90;
@@ -306,23 +309,26 @@ export default function Home() {
         return prev + Math.random() * 10;
       });
     }, 300);
-    
+
     try {
       // Upload the file to the backend
-      const response = (await uploadDataset(uploadedFile, clusterCount)) as UploadResponse;
+      const response = (await uploadDataset(
+        uploadedFile,
+        clusterCount
+      )) as UploadResponse;
 
       if (response && response.job_id) {
         clearInterval(progressInterval);
         setUploadProgress(100);
         setJobId(response.job_id);
         setJobStatus("processing");
-        setUploadStatus('processing');
+        setUploadStatus("processing");
       } else {
         throw new Error("Invalid response from server");
       }
     } catch (error) {
       clearInterval(progressInterval);
-      setUploadStatus('error');
+      setUploadStatus("error");
       console.error("Error processing file:", error);
     }
   };
@@ -353,14 +359,16 @@ export default function Home() {
   const handleFetchEmbeddingsInfo = async () => {
     setIsLoading(true);
     setShowDefaultObjects(false);
-    
+
     try {
       // Get unbiased embeddings
-      const unbiasedEmbeddings = (await getUnbiasedEmbeddingsData()) as EmbeddingsData;
+      const unbiasedEmbeddings =
+        (await getUnbiasedEmbeddingsData()) as EmbeddingsData;
       console.log("Unbiased embeddings:", unbiasedEmbeddings);
 
       // Get removed embeddings
-      const removedEmbeddings = (await getRemovedEmbeddingsData()) as EmbeddingsData;
+      const removedEmbeddings =
+        (await getRemovedEmbeddingsData()) as EmbeddingsData;
       console.log("Removed embeddings:", removedEmbeddings);
 
       // Get all cluster analyses in one call
@@ -377,16 +385,16 @@ export default function Home() {
       setClusterData(clustersInfo);
 
       setIsLoading(false);
-      
+
       // Remove this alert or replace with a more subtle indication
       // alert("Successfully fetched embeddings and clusters data. Check the console.");
-      
+
       // Optional: You can update a state variable to show a status in the UI instead
       // setFetchStatus('success');
     } catch (error) {
       console.error("Error fetching embeddings info:", error);
       setIsLoading(false);
-      
+
       // Remove this alert
       // alert("Error fetching embeddings info. Please try again.");
     }
@@ -406,11 +414,11 @@ export default function Home() {
   const handleTabSwitch = (tab: string) => {
     // If already on this tab or transitioning, do nothing
     if (activeTab === tab || isTabTransitioning) return;
-    
+
     // If switching from analysis to clusters, add delay
     if (activeTab === "bias" && tab === "clusters") {
       setIsTabTransitioning(true);
-      
+
       // Set a timeout to actually change the tab after 500ms
       setTimeout(() => {
         setActiveTab(tab);
@@ -425,7 +433,7 @@ export default function Home() {
   // Update the CSS animation duration in globals.css or add this style tag to your layout.tsx
   useEffect(() => {
     // Add a style tag to the document head
-    const styleTag = document.createElement('style');
+    const styleTag = document.createElement("style");
     styleTag.innerHTML = `
       @keyframes fadeOut {
         0% { opacity: 1; }
@@ -437,7 +445,7 @@ export default function Home() {
       }
     `;
     document.head.appendChild(styleTag);
-    
+
     // Clean up
     return () => {
       document.head.removeChild(styleTag);
@@ -465,7 +473,7 @@ export default function Home() {
 
       {/* Logo at top left with good padding - persistent across all tabs */}
       <div className="fixed top-8 left-10 z-20">
-        <h1 className="font-serif text-6xl font-bold text-black drop-shadow-md">
+        <h1 className="font-serif text-6xl text-black drop-shadow-md">
           Overseer
         </h1>
       </div>
@@ -481,7 +489,7 @@ export default function Home() {
                 : "left-[calc(50%+1px)] right-1"
             }`}
           />
-          <button
+          {/* <button
             onClick={() => handleTabSwitch("clusters")}
             disabled={isTabTransitioning}
             className={`px-8 py-3 rounded-full text-lg font-medium transition-all relative z-10 ${
@@ -502,7 +510,7 @@ export default function Home() {
             } ${isTabTransitioning ? "cursor-not-allowed opacity-70" : ""}`}
           >
             Analysis
-          </button>
+          </button> */}
         </div>
       </div>
 
@@ -514,21 +522,21 @@ export default function Home() {
         >
           Upload
         </button>
-        
+
         <button
           onClick={handleFilter}
           className="bg-white hover:bg-gray-100 text-gray-800 font-semibold py-2 px-4 border border-gray-400 rounded-md shadow"
         >
           Get Unbiased Data
         </button>
-        
+
         <button
           onClick={handleDownload}
           className="bg-white hover:bg-gray-100 text-gray-800 font-semibold py-2 px-4 border border-gray-400 rounded-md shadow"
         >
           Download Summary
         </button>
-        
+
         <button
           onClick={handleFetchEmbeddingsInfo}
           className="bg-white hover:bg-gray-100 text-gray-800 font-semibold py-2 px-4 border border-gray-400 rounded-md shadow"
@@ -560,35 +568,71 @@ export default function Home() {
       )}
 
       {/* New Upload Progress Overlay */}
-      {uploadStatus !== 'idle' && uploadStatus !== 'complete' && (
+      {uploadStatus !== "idle" && uploadStatus !== "complete" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4 animate-fadeIn">
             <div className="text-center">
-              {uploadStatus === 'uploading' && (
+              {uploadStatus === "uploading" && (
                 <>
                   <div className="mb-4">
-                    <svg className="w-16 h-16 mx-auto text-blue-500 animate-bounce" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    <svg
+                      className="w-16 h-16 mx-auto text-blue-500 animate-bounce"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                      />
                     </svg>
                   </div>
-                  <h3 className="text-xl font-bold mb-2 text-black">Uploading {uploadedFile?.name}</h3>
+                  <h3 className="text-xl font-bold mb-2 text-black">
+                    Uploading {uploadedFile?.name}
+                  </h3>
                   <div className="w-full bg-gray-200 rounded-full h-2.5 mb-4">
-                    <div className="bg-blue-500 h-2.5 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }}></div>
+                    <div
+                      className="bg-blue-500 h-2.5 rounded-full transition-all duration-300"
+                      style={{ width: `${uploadProgress}%` }}
+                    ></div>
                   </div>
-                  <p className="text-gray-600">Please wait while we upload your file...</p>
+                  <p className="text-gray-600">
+                    Please wait while we upload your file...
+                  </p>
                 </>
               )}
-              
-              {uploadStatus === 'processing' && (
+
+              {uploadStatus === "processing" && (
                 <>
                   <div className="mb-4">
-                    <svg className="w-16 h-16 mx-auto text-blue-500 animate-spin" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    <svg
+                      className="w-16 h-16 mx-auto text-blue-500 animate-spin"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      ></circle>
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      ></path>
                     </svg>
                   </div>
-                  <h3 className="text-xl font-bold mb-2 text-black">Processing Data</h3>
-                  <p className="text-gray-600 mb-4">Analyzing and clustering your data...</p>
+                  <h3 className="text-xl font-bold mb-2 text-black">
+                    Processing Data
+                  </h3>
+                  <p className="text-gray-600 mb-4">
+                    Analyzing and clustering your data...
+                  </p>
                   <div className="flex justify-center space-x-1">
                     <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
                     <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse delay-150"></div>
@@ -596,18 +640,32 @@ export default function Home() {
                   </div>
                 </>
               )}
-              
-              {uploadStatus === 'error' && (
+
+              {uploadStatus === "error" && (
                 <>
                   <div className="mb-4">
-                    <svg className="w-16 h-16 mx-auto text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    <svg
+                      className="w-16 h-16 mx-auto text-red-500"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
                     </svg>
                   </div>
-                  <h3 className="text-xl font-bold mb-2 text-red-600">Processing Failed</h3>
-                  <p className="text-gray-600 mb-4">There was an error processing your file.</p>
-                  <button 
-                    onClick={() => setUploadStatus('idle')}
+                  <h3 className="text-xl font-bold mb-2 text-red-600">
+                    Processing Failed
+                  </h3>
+                  <p className="text-gray-600 mb-4">
+                    There was an error processing your file.
+                  </p>
+                  <button
+                    onClick={() => setUploadStatus("idle")}
                     className="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
                   >
                     Close
@@ -618,14 +676,24 @@ export default function Home() {
           </div>
         </div>
       )}
-      
+
       {/* Success notification at bottom right of screen, above instructions box */}
       {showSuccessNotification && (
         <div className="fixed bottom-28 right-4 z-50 bg-green-50 border-l-4 border-green-500 p-4 rounded shadow-lg animate-fadeOut w-full max-w-md">
           <div className="flex">
             <div className="flex-shrink-0">
-              <svg className="h-5 w-5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              <svg
+                className="h-5 w-5 text-green-500"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M5 13l4 4L19 7"
+                />
               </svg>
             </div>
             <div className="ml-3">

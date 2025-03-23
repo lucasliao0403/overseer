@@ -3,8 +3,8 @@ import * as THREE from "three";
 import { vectors, Vector6D } from "../data/spheres";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { getClusterAnalysis } from "../api/apiClient";
-import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
-import { FontLoader } from 'three/addons/loaders/FontLoader.js';
+import { TextGeometry } from "three/addons/geometries/TextGeometry.js";
+import { FontLoader } from "three/addons/loaders/FontLoader.js";
 
 // Extended interface for our data points
 interface DataPoint extends Vector6D {
@@ -230,23 +230,22 @@ export default function SphereScene({
     defaultGroup.add(sphere);
 
     // Add text using a canvas texture
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d");
     if (context) {
       canvas.width = 512;
       canvas.height = 100;
-      context.fillStyle = 'black';
-      context.font = 'bold 50px Arial';
-      context.textAlign = 'center';
-      context.fillText('Upload and Fetch!', 256, 80);
-      
+      context.fillStyle = "black";
+      context.font = "bold 50px Arial";
+      context.textAlign = "center";
+
       const texture = new THREE.CanvasTexture(canvas);
       const textPlane = new THREE.Mesh(
         new THREE.PlaneGeometry(4, 1),
-        new THREE.MeshBasicMaterial({ 
-          map: texture, 
+        new THREE.MeshBasicMaterial({
+          map: texture,
           transparent: true,
-          side: THREE.DoubleSide
+          side: THREE.DoubleSide,
         })
       );
       textPlane.position.y = 2;
@@ -265,13 +264,13 @@ export default function SphereScene({
     // Regular render loop
     const animate = () => {
       requestAnimationFrame(animate);
-      
+
       // Rotate the default sphere if it exists
       if (defaultObjectsRef.current && defaultObjectsRef.current.visible) {
         sphere.rotation.y += 0.01;
         sphere.rotation.x += 0.005;
       }
-      
+
       controls.update();
       renderer.render(scene, camera);
     };
@@ -858,14 +857,14 @@ export default function SphereScene({
     if (!clusterEmbeddings?.clusters) return "?";
     const clusterIds = Object.keys(clusterEmbeddings.clusters);
     const index = clusterIds.indexOf(clusterId);
-    return index >= 0 ? String.fromCharCode(65 + index % 26) : "?";
+    return index >= 0 ? String.fromCharCode(65 + (index % 26)) : "?";
   };
 
   // Add this function to clean markdown from analysis text
   const cleanAnalysisText = (text: string) => {
     if (!text) return "";
     // Remove markdown asterisks from the beginning of the text
-    return text.replace(/^\*\*(.*?)\*\*/m, '$1');
+    return text.replace(/^\*\*(.*?)\*\*/m, "$1");
   };
 
   // Component return: conditionally render if not clusters
@@ -911,12 +910,14 @@ export default function SphereScene({
       {/* Increase top padding further to position under the title */}
       <div className="absolute top-28 left-10 z-10 space-y-4">
         {/* Title removed from here - now in page.tsx */}
-        
+
         {/* Cluster Panel */}
         {clusterEmbeddings && activeTab === "clusters" && (
           <div className="bg-white/80 backdrop-blur-sm p-4 rounded-lg shadow-md max-w-xs">
-            <h3 className="text-sm font-semibold text-gray-800 mb-3">Clusters</h3>
-            
+            <h3 className="text-sm font-semibold text-gray-800 mb-3">
+              Clusters
+            </h3>
+
             {/* Rest of cluster panel content */}
             <div className="space-y-2.5 max-h-[60vh] overflow-y-auto pr-1">
               {/* Cluster items */}
@@ -925,7 +926,7 @@ export default function SphereScene({
                   const clusterColor =
                     clusterColors[index % clusterColors.length];
                   // Use letters instead of cluster IDs
-                  const clusterLetter = String.fromCharCode(65 + index % 26);
+                  const clusterLetter = String.fromCharCode(65 + (index % 26));
                   return (
                     <div
                       key={clusterId}
@@ -968,7 +969,7 @@ export default function SphereScene({
                 }
               )}
             </div>
-            
+
             {/* Recenter button */}
             <button
               onClick={handleRecenter}
@@ -990,13 +991,14 @@ export default function SphereScene({
             </button>
           </div>
         )}
-        
+
         {/* Cluster Analysis Panel - smaller */}
         {selectedCluster && (
           <div className="bg-white/80 backdrop-blur-sm p-3 rounded-lg shadow-md max-h-[50vh] max-w-xs overflow-y-auto">
             <div className="flex justify-between items-center mb-3 pb-2 border-b border-gray-200 bg-blue-50 -m-3 p-3 rounded-t-lg">
               <h3 className="text-base font-bold text-blue-700">
-                Cluster {getClusterLetter(selectedCluster, clusterEmbeddings)} Analysis
+                Cluster {getClusterLetter(selectedCluster, clusterEmbeddings)}{" "}
+                Analysis
               </h3>
               <button
                 onClick={() => setSelectedCluster(null)}
@@ -1006,9 +1008,9 @@ export default function SphereScene({
               </button>
             </div>
             <div className="text-xs text-gray-600 whitespace-pre-wrap leading-relaxed mt-2">
-              {clusterAnalyses[selectedCluster] ? 
-                cleanAnalysisText(clusterAnalyses[selectedCluster]) : 
-                "Loading analysis..."}
+              {clusterAnalyses[selectedCluster]
+                ? cleanAnalysisText(clusterAnalyses[selectedCluster])
+                : "Loading analysis..."}
             </div>
           </div>
         )}
