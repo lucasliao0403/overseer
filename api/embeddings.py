@@ -167,7 +167,7 @@ def main(input_file=None):
         print("Saved cleaned dataframe to cleaned_resumes.csv")
     
     # Find the N densest clusters
-    n_clusters = 3  # Number of clusters to save
+    n_clusters = 6  # Number of clusters to save
     _, densest_cluster_indices = find_dense_clusters(
         resume_embeddings, 
         min_cluster_size=10,  # Adjust as needed

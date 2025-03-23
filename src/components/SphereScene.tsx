@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { vectors, Vector6D } from "../data/spheres";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { getClusterAnalysis } from "../api/apiClient";
 
 // Extended interface for our data points
 interface DataPoint extends Vector6D {
@@ -57,6 +58,12 @@ interface ClusterData {
   };
 }
 
+// Add this interface near the top of your file
+interface ClusterAnalysis {
+  description: string;
+  [key: string]: any;
+}
+
 // Fix duplicate interfaces and component declarations
 interface SphereSceneProps {
   unbiasedEmbeddings?: EmbeddingsData | null;
@@ -107,6 +114,30 @@ export default function SphereScene({
 
   // Example: track data from embeddings if needed
   const [apiDataPoints, setApiDataPoints] = useState<any[]>([]);
+
+  // Add this state to track visible clusters
+  const [visibleClusters, setVisibleClusters] = useState<{
+    [id: string]: boolean;
+  }>({});
+
+  // Add this state to store cluster analyses
+  const [clusterAnalyses, setClusterAnalyses] = useState<{
+    [id: string]: string;
+  }>({});
+  const [selectedCluster, setSelectedCluster] = useState<string | null>(null);
+
+  // Standalone useEffect for initializing visibility state
+  useEffect(() => {
+    if (!clusterEmbeddings?.clusters) return;
+
+    // Initialize all clusters to visible
+    const initialVisibility: { [id: string]: boolean } = {};
+    Object.keys(clusterEmbeddings.clusters).forEach((id) => {
+      initialVisibility[id] = true;
+    });
+
+    setVisibleClusters(initialVisibility);
+  }, [clusterEmbeddings]);
 
   // Function to handle recenter button click - moved outside useEffect
   const handleRecenter = () => {
@@ -384,28 +415,18 @@ export default function SphereScene({
     };
   }, [removedEmbeddings, activeTab]);
 
-  // Add this effect to handle cluster embeddings visualization
+  // The cluster visualization effect (now without nested useEffect)
   useEffect(() => {
     if (activeTab !== "clusters" || !clusterEmbeddings || !sceneRef.current) {
-      console.log("Skipping cluster visualization:", {
-        activeTab,
-        hasClusterEmbeddings: !!clusterEmbeddings,
-        hasScene: !!sceneRef.current,
-      });
       return;
     }
 
-    // Debug: Log what we received
-    console.log("ClusterEmbeddings received:", clusterEmbeddings);
-
-    // Instead of flattening, keep clusters separate
     if (!clusterEmbeddings.clusters) {
       console.warn("No clusters found in clusterEmbeddings data");
       return;
     }
 
     const clusters = clusterEmbeddings.clusters;
-    console.log(`Processing ${Object.keys(clusters).length} separate clusters`);
 
     // Create a parent group for all clusters
     const allClustersGroup = new THREE.Group();
@@ -420,6 +441,12 @@ export default function SphereScene({
     Object.entries(clusters).forEach(
       ([clusterIdStr, clusterInfo]: [string, any], clusterIndex) => {
         const clusterId = parseInt(clusterIdStr, 10);
+
+        // Skip if this cluster should be hidden
+        if (visibleClusters[clusterIdStr] === false) {
+          return;
+        }
+
         const clusterColor = clusterColors[clusterIndex % clusterColors.length];
         console.log(
           `Processing cluster ${clusterId} with color #${clusterColor.getHexString()}`
@@ -559,7 +586,52 @@ export default function SphereScene({
         }
       });
     };
-  }, [clusterEmbeddings, activeTab]);
+  }, [clusterEmbeddings, activeTab, visibleClusters]);
+
+  // Toggle cluster visibility handler
+  const toggleClusterVisibility = (clusterId: string) => {
+    setVisibleClusters((prev) => ({
+      ...prev,
+      [clusterId]: !prev[clusterId],
+    }));
+  };
+
+  // Add this useEffect to fetch cluster analyses
+  useEffect(() => {
+    if (!clusterEmbeddings?.clusters) return;
+
+    const fetchClusterAnalyses = async () => {
+      const analyses: { [id: string]: string } = {};
+
+      for (const clusterId of Object.keys(clusterEmbeddings.clusters || {})) {
+        try {
+          const analysis = (await getClusterAnalysis(
+            parseInt(clusterId, 10)
+          )) as ClusterAnalysis;
+          if (analysis && analysis.description) {
+            analyses[clusterId] = analysis.description;
+          } else {
+            analyses[clusterId] = "No analysis available for this cluster.";
+          }
+        } catch (error) {
+          console.error(
+            `Error fetching analysis for cluster ${clusterId}:`,
+            error
+          );
+          analyses[clusterId] = "Failed to load cluster analysis.";
+        }
+      }
+
+      setClusterAnalyses(analyses);
+    };
+
+    fetchClusterAnalyses();
+  }, [clusterEmbeddings]);
+
+  // Add this handler to select a cluster for viewing its analysis
+  const selectCluster = (clusterId: string) => {
+    setSelectedCluster(selectedCluster === clusterId ? null : clusterId);
+  };
 
   // Component return: conditionally render if not clusters
   if (activeTab !== "clusters") {
@@ -575,6 +647,85 @@ export default function SphereScene({
   return (
     <div className="relative w-full h-full">
       <canvas ref={canvasRef} />
+
+      {/* Cluster Legend */}
+      {activeTab === "clusters" && clusterEmbeddings?.clusters && (
+        <div className="absolute top-4 left-4 z-10 flex flex-col gap-3 max-w-md">
+          {/* Clusters Toggle Panel */}
+          <div className="bg-white/80 backdrop-blur-sm p-3 rounded-lg shadow-md max-h-[40vh] overflow-y-auto">
+            <h3 className="text-sm font-semibold mb-2 text-gray-800">
+              Clusters
+            </h3>
+            <div className="space-y-2">
+              {Object.entries(clusterEmbeddings.clusters).map(
+                ([clusterId, clusterInfo]: [string, any], index) => {
+                  const clusterColor =
+                    clusterColors[index % clusterColors.length];
+                  return (
+                    <div
+                      key={clusterId}
+                      className="flex items-center space-x-2"
+                    >
+                      <div className="flex items-center">
+                        <input
+                          type="checkbox"
+                          id={`cluster-${clusterId}`}
+                          checked={visibleClusters[clusterId] !== false}
+                          onChange={() => toggleClusterVisibility(clusterId)}
+                          className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                      </div>
+                      <label
+                        htmlFor={`cluster-${clusterId}`}
+                        className="flex-grow flex items-center cursor-pointer text-sm"
+                      >
+                        <span
+                          className="inline-block w-3 h-3 mr-2 rounded-full"
+                          style={{
+                            backgroundColor: `#${clusterColor.getHexString()}`,
+                          }}
+                        ></span>
+                        Cluster {clusterId}
+                        {clusterInfo.size && (
+                          <span className="text-xs text-gray-500 ml-1">
+                            ({clusterInfo.size})
+                          </span>
+                        )}
+                      </label>
+                      <button
+                        onClick={() => selectCluster(clusterId)}
+                        className="ml-auto text-xs text-blue-500 hover:text-blue-700"
+                      >
+                        {selectedCluster === clusterId ? "Hide" : "Info"}
+                      </button>
+                    </div>
+                  );
+                }
+              )}
+            </div>
+          </div>
+
+          {/* Cluster Analysis Panel */}
+          {selectedCluster && (
+            <div className="bg-white/80 backdrop-blur-sm p-3 rounded-lg shadow-md max-h-[40vh] overflow-y-auto">
+              <div className="flex justify-between items-center mb-2">
+                <h3 className="text-sm font-semibold text-gray-800">
+                  Cluster {selectedCluster} Analysis
+                </h3>
+                <button
+                  onClick={() => setSelectedCluster(null)}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  <span className="sr-only">Close</span>✕
+                </button>
+              </div>
+              <div className="text-sm text-gray-600 whitespace-pre-wrap">
+                {clusterAnalyses[selectedCluster] || "Loading analysis..."}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
