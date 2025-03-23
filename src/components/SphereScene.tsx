@@ -29,12 +29,37 @@ interface EmbeddingsData {
   file_size_bytes: number;
 }
 
+// Add this interface definition for the cluster data structure
+interface ClusterEmbedding {
+  id: number;
+  resume_id: number;
+  cluster_id: number;
+  embedding: number[];
+}
+
+// Update the ClusterData interface to match actual data structure
+interface ClusterData {
+  cluster_id?: number;
+  total_embeddings?: number;
+  dimensions?: number;
+  embeddings?: ClusterEmbedding[];
+  clusters?: {
+    [clusterId: string]: {
+      size: number;
+      center: number[];
+      embeddings?: any[];
+      [key: string]: any;
+    };
+  };
+}
+
 // Fix duplicate interfaces and component declarations
 interface SphereSceneProps {
   unbiasedEmbeddings?: EmbeddingsData | null;
   removedEmbeddings?: EmbeddingsData | null;
-  activeTab?: string | null; // Define allowed literal values
+  activeTab?: string; // Accept any string
   clusterData?: any;
+  clusterEmbeddings?: ClusterData | null; // Add with proper typing
 }
 
 // Add this before your SphereScene component, outside any function
@@ -49,6 +74,7 @@ export default function SphereScene({
   unbiasedEmbeddings,
   removedEmbeddings,
   activeTab = "clusters",
+  clusterEmbeddings,
   clusterData,
 }: SphereSceneProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -353,6 +379,216 @@ export default function SphereScene({
       });
     };
   }, [removedEmbeddings, activeTab]);
+
+  // Add this effect to handle cluster embeddings visualization
+  useEffect(() => {
+    if (activeTab !== "clusters" || !clusterEmbeddings || !sceneRef.current) {
+      console.log("Skipping cluster visualization:", {
+        activeTab,
+        hasClusterEmbeddings: !!clusterEmbeddings,
+        hasScene: !!sceneRef.current,
+      });
+      return;
+    }
+
+    // Debug: Log what we received
+    console.log("ClusterEmbeddings received:", clusterEmbeddings);
+
+    // Handle potentially different formats
+    let embeddings: any[] = [];
+
+    // Check if it's in our expected format or needs conversion
+    if (Array.isArray(clusterEmbeddings)) {
+      console.log("ClusterEmbeddings is an array");
+      embeddings = clusterEmbeddings;
+    } else if (
+      clusterEmbeddings.embeddings &&
+      Array.isArray(clusterEmbeddings.embeddings)
+    ) {
+      console.log("Using embeddings property from clusterEmbeddings");
+      embeddings = clusterEmbeddings.embeddings;
+    } else if (clusterEmbeddings.clusters) {
+      // Handle clusters info format
+      console.log("Converting clusters object to embeddings array");
+
+      const clusters = clusterEmbeddings.clusters;
+      // Flatten all clusters into a single array
+      embeddings = Object.entries(clusters).flatMap(
+        ([clusterId, clusterInfo]: [string, any]) => {
+          if (clusterInfo.embeddings && Array.isArray(clusterInfo.embeddings)) {
+            return clusterInfo.embeddings.map((emb: any) => ({
+              id: emb.id || Math.random(),
+              resume_id: emb.resume_id || 0,
+              cluster_id: parseInt(clusterId, 10),
+              embedding: emb.embedding || emb,
+            }));
+          }
+          return [];
+        }
+      );
+    }
+
+    console.log(`Processing ${embeddings.length} cluster embeddings`);
+
+    if (embeddings.length === 0) {
+      console.warn("No embeddings found to visualize");
+      return;
+    }
+
+    // Function to normalize embeddings to match scale of unbiased embeddings
+    const normalizeVector = (embedding: number[]) => {
+      // Calculate L2 norm (magnitude) of the vector
+      const magnitude = Math.sqrt(
+        embedding.reduce((sum, val) => sum + val * val, 0)
+      );
+      // Normalize to unit vector
+      return embedding.map((val) => val / magnitude);
+    };
+
+    // Create a group for clusters
+    const clusterGroup = new THREE.Group();
+    const lineGroup = new THREE.Group();
+    const SCALE = 2.5;
+
+    // Keep track of created nodes for debugging
+    const createdNodes: THREE.Mesh[] = [];
+
+    // Create nodes for each embedding
+    embeddings.forEach((item, index) => {
+      // Handle different possible formats
+      const id = item.id || index;
+      const cluster_id = item.cluster_id || 0;
+      const embedding = item.embedding || item;
+
+      // Only continue if we have enough dimensions
+      if (!Array.isArray(embedding) || embedding.length < 3) {
+        console.warn(
+          `Skipping embedding at index ${index}, invalid format:`,
+          embedding
+        );
+        return;
+      }
+
+      // Normalize the embedding to match unbiased embeddings scale
+      const normalizedEmbedding = normalizeVector(embedding.slice(0, 3));
+
+      // Create a sphere for this node
+      const geometry = new THREE.SphereGeometry(0.1, 16, 16); // Make slightly larger to be visible
+
+      // Use cluster_id to determine color from clusterColors array
+      const colorIndex = cluster_id % clusterColors.length;
+      const color = clusterColors[colorIndex];
+
+      const material = new THREE.MeshBasicMaterial({
+        color: color,
+        opacity: 0.9,
+        transparent: true,
+      });
+
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(
+        normalizedEmbedding[0] * SCALE,
+        normalizedEmbedding[1] * SCALE,
+        normalizedEmbedding[2] * SCALE
+      );
+
+      // Add custom properties for hover/selection
+      mesh.userData = { id, cluster_id, resume_id: item.resume_id || 0 };
+
+      clusterGroup.add(mesh);
+      createdNodes.push(mesh);
+
+      // Log every 10th node for debugging
+      if (index % 10 === 0) {
+        console.log(`Created node ${index} at position:`, mesh.position);
+      }
+    });
+
+    console.log(
+      `Created ${createdNodes.length} nodes from ${embeddings.length} embeddings`
+    );
+
+    // Add connections between nodes in the same cluster with more connections
+    const nodes = clusterGroup.children as THREE.Mesh[];
+
+    // Group nodes by cluster_id
+    const clusterMap = new Map<number, THREE.Mesh[]>();
+    nodes.forEach((node) => {
+      const clusterId = node.userData.cluster_id;
+      if (!clusterMap.has(clusterId)) {
+        clusterMap.set(clusterId, []);
+      }
+      clusterMap.get(clusterId)?.push(node);
+    });
+
+    console.log(`Grouped nodes into ${clusterMap.size} clusters`);
+
+    // Log cluster sizes
+    clusterMap.forEach((nodes, clusterId) => {
+      console.log(`Cluster ${clusterId} has ${nodes.length} nodes`);
+    });
+
+    // Create lines between nodes in same cluster
+    let lineCount = 0;
+    clusterMap.forEach((clusterNodes, clusterId) => {
+      // For small clusters, connect all nodes
+      const connectProbability = clusterNodes.length > 20 ? 0.3 : 0.8;
+
+      for (let i = 0; i < clusterNodes.length; i++) {
+        for (let j = i + 1; j < clusterNodes.length; j++) {
+          // Connect more nodes for visibility
+          if (Math.random() > connectProbability) continue;
+
+          const points = [
+            clusterNodes[i].position.clone(),
+            clusterNodes[j].position.clone(),
+          ];
+
+          const geometry = new THREE.BufferGeometry().setFromPoints(points);
+          const material = new THREE.LineBasicMaterial({
+            color: clusterColors[clusterId % clusterColors.length],
+            transparent: true,
+            opacity: 0.6, // Increased opacity for better visibility
+            linewidth: 2, // Note: linewidth only works in WebGLRenderer with certain extensions
+          });
+
+          const line = new THREE.Line(geometry, material);
+          lineGroup.add(line);
+          lineCount++;
+        }
+      }
+    });
+
+    console.log(`Created ${lineCount} connection lines between nodes`);
+
+    // Add both groups to the scene
+    sceneRef.current.add(clusterGroup);
+    sceneRef.current.add(lineGroup);
+
+    console.log("Added cluster visualization to scene");
+
+    // Cleanup function
+    return () => {
+      console.log("Cleaning up cluster visualization");
+      sceneRef.current?.remove(clusterGroup);
+      sceneRef.current?.remove(lineGroup);
+
+      // Dispose of all geometries and materials
+      clusterGroup.traverse((obj) => {
+        if (obj instanceof THREE.Mesh) {
+          obj.geometry.dispose();
+          if (obj.material instanceof THREE.Material) obj.material.dispose();
+        }
+      });
+
+      lineGroup.traverse((obj) => {
+        if (obj instanceof THREE.Line) {
+          obj.geometry.dispose();
+          if (obj.material instanceof THREE.Material) obj.material.dispose();
+        }
+      });
+    };
+  }, [clusterEmbeddings, activeTab]);
 
   // Component return: conditionally render if not clusters
   if (activeTab !== "clusters") {

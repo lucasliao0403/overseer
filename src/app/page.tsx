@@ -384,6 +384,7 @@ export default function Home() {
       <SphereScene
         unbiasedEmbeddings={embeddingsData}
         removedEmbeddings={removedEmbeddingsData}
+        clusterEmbeddings={clusterData}
         activeTab={activeTab}
         clusterData={clusterData}
       />
