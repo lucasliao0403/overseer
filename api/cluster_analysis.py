@@ -149,6 +149,9 @@ def save_cluster_embeddings(cluster_df, cluster_num, clusters_dir):
     pca = PCA(n_components=6)
     embeddings_6d = pca.fit_transform(scaled_embeddings)
     
+    # Normalize the embeddings to match unbiased embeddings
+    embeddings_6d = normalize_embeddings(embeddings_6d)
+    
     # Create data structure for 6D embeddings
     embeddings_6d_data = {
         "cluster_id": cluster_num,
@@ -181,6 +184,18 @@ def save_cluster_embeddings(cluster_df, cluster_num, clusters_dir):
     print(f"  PCA explained variance with 6 components: {explained_variance:.2f}%")
     
     return embeddings_file
+
+def normalize_embeddings(embeddings):
+    """
+    Normalize each embedding vector to unit length (L2 norm)
+    """
+    # Calculate L2 norm (magnitude) of each vector
+    norms = np.sqrt(np.sum(np.square(embeddings), axis=1, keepdims=True))
+    # Prevent division by zero
+    norms = np.maximum(norms, 1e-10)
+    # Normalize to unit vectors
+    normalized_embeddings = embeddings / norms
+    return normalized_embeddings
 
 def export_complete_dataset(cluster_files):
     """

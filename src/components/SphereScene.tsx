@@ -435,16 +435,6 @@ export default function SphereScene({
       return;
     }
 
-    // Function to normalize embeddings to match scale of unbiased embeddings
-    const normalizeVector = (embedding: number[]) => {
-      // Calculate L2 norm (magnitude) of the vector
-      const magnitude = Math.sqrt(
-        embedding.reduce((sum, val) => sum + val * val, 0)
-      );
-      // Normalize to unit vector
-      return embedding.map((val) => val / magnitude);
-    };
-
     // Create a group for clusters
     const clusterGroup = new THREE.Group();
     const lineGroup = new THREE.Group();
@@ -469,11 +459,8 @@ export default function SphereScene({
         return;
       }
 
-      // Normalize the embedding to match unbiased embeddings scale
-      const normalizedEmbedding = normalizeVector(embedding.slice(0, 3));
-
       // Create a sphere for this node
-      const geometry = new THREE.SphereGeometry(0.1, 16, 16); // Make slightly larger to be visible
+      const geometry = new THREE.SphereGeometry(0.05, 16, 16); // Smaller size to match other points
 
       // Use cluster_id to determine color from clusterColors array
       const colorIndex = cluster_id % clusterColors.length;
@@ -487,9 +474,9 @@ export default function SphereScene({
 
       const mesh = new THREE.Mesh(geometry, material);
       mesh.position.set(
-        normalizedEmbedding[0] * SCALE,
-        normalizedEmbedding[1] * SCALE,
-        normalizedEmbedding[2] * SCALE
+        embedding[0] * SCALE,
+        embedding[1] * SCALE,
+        embedding[2] * SCALE
       );
 
       // Add custom properties for hover/selection
@@ -523,6 +510,22 @@ export default function SphereScene({
 
     console.log(`Grouped nodes into ${clusterMap.size} clusters`);
 
+    // Create a mapping of cluster IDs to unique colors
+    const uniqueClusterIds = Array.from(clusterMap.keys());
+    const clusterColorMap = new Map<number, THREE.Color>();
+    uniqueClusterIds.forEach((clusterId, index) => {
+      // Assign each cluster a unique color from our palette
+      clusterColorMap.set(
+        clusterId,
+        clusterColors[index % clusterColors.length]
+      );
+      console.log(
+        `Assigned cluster ${clusterId} color index ${
+          index % clusterColors.length
+        }`
+      );
+    });
+
     // Log cluster sizes
     clusterMap.forEach((nodes, clusterId) => {
       console.log(`Cluster ${clusterId} has ${nodes.length} nodes`);
@@ -531,32 +534,52 @@ export default function SphereScene({
     // Create lines between nodes in same cluster
     let lineCount = 0;
     clusterMap.forEach((clusterNodes, clusterId) => {
-      // For small clusters, connect all nodes
-      const connectProbability = clusterNodes.length > 20 ? 0.3 : 0.8;
+      // Only connect each node to its 2-3 nearest neighbors
+      const MAX_CONNECTIONS_PER_NODE = 3;
 
-      for (let i = 0; i < clusterNodes.length; i++) {
-        for (let j = i + 1; j < clusterNodes.length; j++) {
-          // Connect more nodes for visibility
-          if (Math.random() > connectProbability) continue;
+      // For each node, find its closest neighbors
+      clusterNodes.forEach((sourceNode, i) => {
+        // Calculate distances to all other nodes in this cluster
+        const distances = clusterNodes
+          .map((targetNode, j) => {
+            if (i === j) return { index: j, distance: Infinity }; // Skip self
+
+            // Calculate Euclidean distance between nodes
+            const dx = sourceNode.position.x - targetNode.position.x;
+            const dy = sourceNode.position.y - targetNode.position.y;
+            const dz = sourceNode.position.z - targetNode.position.z;
+            const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+            return { index: j, distance };
+          })
+          // Sort by distance (ascending)
+          .sort((a, b) => a.distance - b.distance)
+          // Take only the closest few
+          .slice(0, MAX_CONNECTIONS_PER_NODE);
+
+        // Create lines to the closest neighbors
+        distances.forEach(({ index: j, distance }) => {
+          // Skip if distance is too large
+          if (distance > 2) return;
 
           const points = [
-            clusterNodes[i].position.clone(),
+            sourceNode.position.clone(),
             clusterNodes[j].position.clone(),
           ];
 
           const geometry = new THREE.BufferGeometry().setFromPoints(points);
           const material = new THREE.LineBasicMaterial({
-            color: clusterColors[clusterId % clusterColors.length],
+            color: clusterColorMap.get(clusterId) || clusterColors[0],
             transparent: true,
-            opacity: 0.6, // Increased opacity for better visibility
-            linewidth: 2, // Note: linewidth only works in WebGLRenderer with certain extensions
+            opacity: 0.8,
+            linewidth: 3,
           });
 
           const line = new THREE.Line(geometry, material);
           lineGroup.add(line);
           lineCount++;
-        }
-      }
+        });
+      });
     });
 
     console.log(`Created ${lineCount} connection lines between nodes`);
