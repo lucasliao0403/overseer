@@ -427,6 +427,20 @@ export default function Home() {
       {/* Main content area - always render SphereScene now */}
       <div className="w-full h-screen">
         {activeTab === "clusters" ? (
+<<<<<<< Updated upstream
+=======
+<<<<<<< HEAD
+          <>
+            <SphereScene
+              clusterData={clusterData}
+              unbiasedEmbeddings={embeddingsData}
+              removedEmbeddings={removedEmbeddingsData}
+              clusterEmbeddings={clusterData}
+              activeTab={activeTab}
+            />
+          </>
+=======
+>>>>>>> Stashed changes
           <SphereScene
             clusterData={clusterData}
             unbiasedEmbeddings={embeddingsData}
@@ -435,6 +449,10 @@ export default function Home() {
             activeTab={activeTab}
             showDefaultObjects={showDefaultObjects}
           />
+<<<<<<< Updated upstream
+=======
+>>>>>>> main
+>>>>>>> Stashed changes
         ) : (
           <></>
         )}
