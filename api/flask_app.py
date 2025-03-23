@@ -264,28 +264,28 @@ def get_all_cluster_analyses():
     except Exception as e:
         return jsonify({"error": f"Error reading analyses: {str(e)}"}), 500
 
-# @app.route('/api/analysis/clusters/<cluster_id>', methods=['GET'])
-# def get_cluster_analysis(cluster_id):
-#     """Return the analysis for a specific cluster"""
-#     try:
-#         cluster_id = int(cluster_id)
-#         file_path = f"cluster_analysis/cluster_{cluster_id}_analysis.txt"
+@app.route('/api/analysis/clusters/<cluster_id>', methods=['GET'])
+def get_cluster_analysis(cluster_id):
+    """Return the analysis for a specific cluster"""
+    try:
+        cluster_id = int(cluster_id)
+        file_path = f"cluster_analysis/cluster_{cluster_id}_analysis.txt"
         
-#         if not os.path.exists(file_path):
-#             return jsonify({"error": f"Analysis for cluster {cluster_id} not found"}), 404
+        if not os.path.exists(file_path):
+            return jsonify({"error": f"Analysis for cluster {cluster_id} not found"}), 404
         
-#         with open(file_path, 'r') as f:
-#             analysis = f.read()
+        with open(file_path, 'r') as f:
+            analysis = f.read()
         
-#         return jsonify({
-#             "cluster_id": cluster_id,
-#             "analysis": analysis
-#         })
+        return jsonify({
+            "cluster_id": cluster_id,
+            "analysis": analysis
+        })
     
-#     except ValueError:
-#         return jsonify({"error": "Cluster ID must be a number"}), 400
-#     except Exception as e:
-#         return jsonify({"error": f"Error reading analysis: {str(e)}"}), 500
+    except ValueError:
+        return jsonify({"error": "Cluster ID must be a number"}), 400
+    except Exception as e:
+        return jsonify({"error": f"Error reading analysis: {str(e)}"}), 500
 
 @app.route('/api/summary', methods=['GET'])
 def get_unbiasing_summary():

@@ -440,7 +440,7 @@ export default function SphereScene({
     // Process each cluster separately
     Object.entries(clusters).forEach(
       ([clusterIdStr, clusterInfo]: [string, any], clusterIndex) => {
-        const clusterId = parseInt(clusterIdStr, 10);
+        const clusterId = parseInt(clusterIdStr.slice(-1), 10);
 
         // Skip if this cluster should be hidden
         if (visibleClusters[clusterIdStr] === false) {
@@ -605,11 +605,12 @@ export default function SphereScene({
 
       for (const clusterId of Object.keys(clusterEmbeddings.clusters || {})) {
         try {
-          const analysis = (await getClusterAnalysis(
-            parseInt(clusterId, 10)
-          )) as ClusterAnalysis;
-          if (analysis && analysis.description) {
-            analyses[clusterId] = analysis.description;
+          console.log(`Fetching analysis for cluster ${clusterId}`);
+          const analysis = await getClusterAnalysis(
+            parseInt(clusterId.substr(clusterId.length - 1), 10)
+          );
+          if (analysis && (analysis as any).analysis) {
+            analyses[clusterId] = (analysis as any).analysis;
           } else {
             analyses[clusterId] = "No analysis available for this cluster.";
           }
