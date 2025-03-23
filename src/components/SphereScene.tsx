@@ -898,9 +898,6 @@ export default function SphereScene({
           <div className="text-sm text-gray-600 mt-1">
             <p>ID: {hoveredNode.id}</p>
             <p>Cluster: {hoveredNode.cluster_id}</p>
-            {hoveredNode.resume_id !== undefined && (
-              <p>Resume ID: {hoveredNode.resume_id}</p>
-            )}
           </div>
         </div>
       )}
