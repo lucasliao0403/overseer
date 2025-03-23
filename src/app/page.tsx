@@ -14,6 +14,7 @@ import {
   getUnbiasedEmbeddingsData,
   getRemovedEmbeddingsData,
 } from "../api/apiClient";
+import BiasAnalysisScreen from "@/components/BiasAnalysisScreen";
 
 // Define interfaces for our API responses
 interface Resume {
@@ -85,6 +86,8 @@ export default function Home() {
   const [removedEmbeddingsData, setRemovedEmbeddingsData] =
     useState<EmbeddingsData | null>(null);
   const [clusterData, setClusterData] = useState<any>(null);
+  const [clusterCount, setClusterCount] = useState<number>(5); // Default number of clusters
+  const [aggressiveness, setAggressiveness] = useState<number>(50); // Default aggressiveness (0-100)
 
   useEffect(() => {
     const fetchData = async () => {
@@ -379,24 +382,40 @@ export default function Home() {
     }
   };
 
+  const handleClusterCountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setClusterCount(parseInt(e.target.value));
+  };
+  
+  const handleAggressivenessChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setAggressiveness(parseInt(e.target.value));
+  };
+
   return (
     <main className="relative min-h-screen">
-      <SphereScene
-        unbiasedEmbeddings={embeddingsData}
-        removedEmbeddings={removedEmbeddingsData}
-        clusterEmbeddings={clusterData}
-        activeTab={activeTab}
-        clusterData={clusterData}
-      />
+      {/* Main content area - conditionally render based on activeTab */}
+      <div className="w-full h-screen">
+        {activeTab === "clusters" ? (
+          <SphereScene 
+            clusterData={clusterData} 
+            unbiasedEmbeddings={embeddingsData}
+            removedEmbeddings={removedEmbeddingsData}
+            clusterEmbeddings={clusterData}
+          />
+        ) : (
+          <BiasAnalysisScreen 
+            activeCluster={clusterData} 
+          />
+        )}
+      </div>
 
       {/* Navigation Tabs */}
       <div className="fixed top-8 left-1/2 transform -translate-x-1/2 z-20">
         <div className="bg-white/90 rounded-full shadow-lg p-1 flex relative">
           {/* Animated background that moves based on active tab */}
-          <div
+          <div 
             className={`absolute top-1 bottom-1 rounded-full bg-black transition-all duration-300 ease-in-out ${
-              activeTab === "clusters"
-                ? "left-1 right-[calc(50%+1px)]"
+              activeTab === "clusters" 
+                ? "left-1 right-[calc(50%+1px)]" 
                 : "left-[calc(50%+1px)] right-1"
             }`}
           />
@@ -514,9 +533,9 @@ export default function Home() {
                 </button>
               </div>
 
-              {/* Drag and drop area - updated to match the screenshot */}
+              {/* Drag and drop area */}
               <div
-                className={`border-2 border-dashed border-gray-300 rounded-lg p-10 text-center cursor-pointer transition-colors mb-8 ${
+                className={`border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer transition-colors mb-6 ${
                   isDragging
                     ? "border-blue-500 bg-blue-50"
                     : "hover:border-blue-500"
@@ -536,7 +555,7 @@ export default function Home() {
 
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
-                  className="h-16 w-16 mx-auto text-gray-400 mb-4"
+                  className="h-10 w-10 mx-auto text-gray-400 mb-2"
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -549,14 +568,63 @@ export default function Home() {
                   />
                 </svg>
 
-                <p className="text-lg text-gray-700 font-medium mb-1">
+                <p className="text-base text-gray-700 font-medium">
                   {uploadedFile
                     ? `Selected: ${uploadedFile.name}`
-                    : "Drop your CSV file here or click to browse"}
+                    : "Drop CSV file here or click to browse"}
                 </p>
-                <p className="text-sm text-gray-500">
-                  Supports CSV files with Resume_str column
-                </p>
+                <p className="text-xs text-gray-500">Supports CSV files with Resume_str column</p>
+              </div>
+
+              {/* Control panel */}
+              <div className="bg-gray-50 p-4 rounded-xl mb-6">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-semibold text-gray-900">Controls</h3>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Number of clusters */}
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <label htmlFor="cluster-count" className="text-xs font-medium text-gray-700">Clusters</label>
+                      <span className="text-xs text-gray-500 bg-white px-1.5 py-0.5 rounded-md shadow-sm">{clusterCount}</span>
+                    </div>
+                    <input
+                      id="cluster-count"
+                      type="range"
+                      min="2"
+                      max="20"
+                      value={clusterCount}
+                      onChange={handleClusterCountChange}
+                      className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                    />
+                    <div className="flex justify-between text-[10px] text-gray-500">
+                      <span>2</span>
+                      <span>20</span>
+                    </div>
+                  </div>
+                  
+                  {/* Aggressiveness */}
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <label htmlFor="aggressiveness" className="text-xs font-medium text-gray-700">Aggressiveness</label>
+                      <span className="text-xs text-gray-500 bg-white px-1.5 py-0.5 rounded-md shadow-sm">{aggressiveness}%</span>
+                    </div>
+                    <input
+                      id="aggressiveness"
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={aggressiveness}
+                      onChange={handleAggressivenessChange}
+                      className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                    />
+                    <div className="flex justify-between text-[10px] text-gray-500">
+                      <span>0%</span>
+                      <span>100%</span>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* Format example - updated to match the screenshot */}
