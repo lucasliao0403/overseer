@@ -129,6 +129,18 @@ def create_unbiased_dataset():
     
     print(f"Split embeddings: {len(unbiased_embeddings)} kept, {len(removed_embeddings)} removed")
     
+    # Save the original 384D embeddings
+    print("\nSaving original 384D embeddings for the unbiased dataset...")
+    unbiased_384d_file = output_dir / "unbiased_embeddings_384d.npy"
+    removed_384d_file = output_dir / "removed_embeddings_384d.npy"
+    
+    np.save(unbiased_384d_file, unbiased_embeddings)
+    np.save(removed_384d_file, removed_embeddings)
+    
+    print(f"Saved 384D embeddings as NPY files:")
+    print(f"  - Unbiased embeddings (384D): {unbiased_384d_file}")
+    print(f"  - Removed embeddings (384D): {removed_384d_file}")
+    
     # Apply PCA directly to the embeddings to get 6D versions
     print("\nApplying PCA to reduce embeddings to 6D...")
     pca = PCA(n_components=6)
@@ -176,11 +188,17 @@ def create_unbiased_dataset():
     unbiased_6d_size_mb = os.path.getsize(unbiased_6d_file) / (1024 * 1024)
     removed_6d_size_mb = os.path.getsize(removed_6d_file) / (1024 * 1024)
     
+    # Get 384D file sizes
+    unbiased_384d_size_mb = os.path.getsize(unbiased_384d_file) / (1024 * 1024)
+    removed_384d_size_mb = os.path.getsize(removed_384d_file) / (1024 * 1024)
+    
     print(f"\nFile sizes:")
     print(f"Original cleaned_resumes.csv: {original_size_mb:.2f} MB")
     print(f"Unbiased dataset: {unbiased_size_mb:.2f} MB")
     print(f"Removed entries: {removed_size_mb:.2f} MB")
     print(f"Original embeddings (384D): {original_emb_size_mb:.2f} MB")
+    print(f"Unbiased embeddings (384D): {unbiased_384d_size_mb:.2f} MB")
+    print(f"Removed embeddings (384D): {removed_384d_size_mb:.2f} MB")
     print(f"All embeddings (6D): {all_6d_size_mb:.2f} MB")
     print(f"Unbiased embeddings (6D): {unbiased_6d_size_mb:.2f} MB")
     print(f"Removed embeddings (6D): {removed_6d_size_mb:.2f} MB")
@@ -199,7 +217,9 @@ def create_unbiased_dataset():
             "original_embeddings_mb": original_emb_size_mb,
             "all_embeddings_6d_mb": all_6d_size_mb,
             "unbiased_embeddings_6d_mb": unbiased_6d_size_mb,
-            "removed_embeddings_6d_mb": removed_6d_size_mb
+            "removed_embeddings_6d_mb": removed_6d_size_mb,
+            "unbiased_embeddings_384d_mb": unbiased_384d_size_mb,
+            "removed_embeddings_384d_mb": removed_384d_size_mb
         }
     }
     
@@ -214,6 +234,8 @@ def create_unbiased_dataset():
         
         f.write("Embeddings information:\n")
         f.write(f"  Original embeddings (384D): {len(all_embeddings)} vectors ({original_emb_size_mb:.2f} MB)\n")
+        f.write(f"  Unbiased embeddings (384D): {len(unbiased_embeddings)} vectors ({unbiased_384d_size_mb:.2f} MB)\n")
+        f.write(f"  Removed embeddings (384D): {len(removed_embeddings)} vectors ({removed_384d_size_mb:.2f} MB)\n")
         f.write(f"  All embeddings (6D): {len(all_6d_normalized)} vectors ({all_6d_size_mb:.2f} MB)\n")
         f.write(f"  Unbiased embeddings (6D): {len(unbiased_6d_normalized)} vectors ({unbiased_6d_size_mb:.2f} MB)\n")
         f.write(f"  Removed embeddings (6D): {len(removed_6d_normalized)} vectors ({removed_6d_size_mb:.2f} MB)\n\n")
@@ -247,6 +269,8 @@ def update_download_paths(output_dir):
         print('Add "all_embeddings_6d": "unbiased_dataset/all_embeddings_6d.npy" to file_paths dictionary')
         print('Add "unbiased_embeddings_6d": "unbiased_dataset/unbiased_embeddings_6d.npy" to file_paths dictionary')
         print('Add "removed_embeddings_6d": "unbiased_dataset/removed_embeddings_6d.npy" to file_paths dictionary')
+        print('Add "unbiased_embeddings_384d": "unbiased_dataset/unbiased_embeddings_384d.npy" to file_paths dictionary')
+        print('Add "removed_embeddings_384d": "unbiased_dataset/removed_embeddings_384d.npy" to file_paths dictionary')
     except Exception as e:
         print(f"Error updating download paths: {e}")
 
