@@ -11,33 +11,6 @@ interface DataPoint extends Vector6D {
   connections?: number[]; // Indices of connected data points
 }
 
-// Mock cluster data - replace with actual data from backend
-const mockClusters = [0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3];
-const mockSizes = vectors.map(() => 0.5 + Math.random() * 1.5);
-const mockConfidence = vectors.map(() => 0.3 + Math.random() * 0.7);
-
-// Generate mock connections (in real app, this would come from backend)
-const mockConnections: number[][] = [];
-for (let i = 0; i < vectors.length; i++) {
-  const connections: number[] = [];
-  // Connect points in same cluster with some probability
-  for (let j = 0; j < vectors.length; j++) {
-    if (i !== j && mockClusters[i] === mockClusters[j] && Math.random() > 0.7) {
-      connections.push(j);
-    }
-  }
-  mockConnections.push(connections);
-}
-
-// Enhance vectors with additional data
-const dataPoints: DataPoint[] = vectors.map((vector, index) => ({
-  ...vector,
-  size: mockSizes[index],
-  cluster: mockClusters[index % mockClusters.length],
-  confidence: mockConfidence[index],
-  connections: mockConnections[index],
-}));
-
 // Define cluster colors
 const clusterColors = [
   new THREE.Color(0x4285f4), // Blue
@@ -138,7 +111,7 @@ export default function SphereScene({
       0.1,
       1000
     );
-    camera.position.z = cameraPositionRef.current.z;
+    camera.position.z = 6;
     cameraRef.current = camera;
 
     const renderer = new THREE.WebGLRenderer({
@@ -313,7 +286,8 @@ export default function SphereScene({
     const SCALE = 2.5;
     // Create spheres
     apiDataPoints.forEach(({ x, y, z, r, g, b }) => {
-      const geometry = new THREE.SphereGeometry(0.2, 16, 16);
+      // Use a consistent, very small size (0.05)
+      const geometry = new THREE.SphereGeometry(0.05, 12, 12);
       const material = new THREE.MeshBasicMaterial({
         color: new THREE.Color(r, g, b),
       });
@@ -351,7 +325,8 @@ export default function SphereScene({
 
     removedEmbeddings.embeddings.forEach((emb) => {
       if (emb.length < 6) return;
-      const geometry = new THREE.SphereGeometry(0.2, 16, 16);
+      // Same size for consistency
+      const geometry = new THREE.SphereGeometry(0.05, 12, 12);
       const material = new THREE.MeshBasicMaterial({
         color: new THREE.Color(
           (emb[3] + 1) / 2,
