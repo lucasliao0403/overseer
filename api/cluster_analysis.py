@@ -43,17 +43,23 @@ def analyze_cluster(cluster_df, cluster_num):
     resume_text = "\n".join(resume_samples)
     
     # Craft the prompt
-    prompt = f"""
+    prompt = f"""`
     I have a cluster (Cluster #{cluster_num}) of resume data. Here are {sample_size} sample resumes from this cluster:
     
     {resume_text}
     
     Based on only these samples, please analyze and identify:
-    1. Common skills, experiences, or qualifications in this cluster
-    2. The likely job roles or industries these resumes target
-    4. Any other notable patterns or similarities
+    - Common skills, experiences, or qualifications in this cluster
+    - The likely job roles or industries these resumes target
+    - Any other notable patterns or similarities
     
-    Format your response as a concise, direct, three paragraph summary of the cluster.
+    Format your response as a concise, direct, three sentence summary of the cluster. 
+    Three sentences maximum for the whole response. 
+    Do not use markdown. 
+    Give a brief title for the cluster, then give two newlines, then give the summary.
+    
+    You can use markdown for the title. DO NOT USE MARKDOWN FOR THE SUMMARY.
+    
     """
     
     # Make the API call to Cohere with error handling

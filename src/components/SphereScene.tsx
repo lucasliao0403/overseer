@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { vectors, Vector6D } from "../data/spheres";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { getClusterAnalysis } from "../api/apiClient";
+import ReactMarkdown from "react-markdown";
 
 // Extended interface for our data points
 interface DataPoint extends Vector6D {
@@ -720,8 +721,14 @@ export default function SphereScene({
                   <span className="sr-only">Close</span>✕
                 </button>
               </div>
-              <div className="text-sm text-gray-600 whitespace-pre-wrap">
-                {clusterAnalyses[selectedCluster] || "Loading analysis..."}
+              <div className="text-sm text-gray-600 whitespace-pre-wrap prose prose-sm max-w-none">
+                {clusterAnalyses[selectedCluster] ? (
+                  <ReactMarkdown>
+                    {clusterAnalyses[selectedCluster]}
+                  </ReactMarkdown>
+                ) : (
+                  "Loading analysis..."
+                )}
               </div>
             </div>
           )}
