@@ -3,6 +3,8 @@ import * as THREE from "three";
 import { vectors, Vector6D } from "../data/spheres";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { getClusterAnalysis } from "../api/apiClient";
+import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
+import { FontLoader } from 'three/addons/loaders/FontLoader.js';
 
 // Extended interface for our data points
 interface DataPoint extends Vector6D {
@@ -71,6 +73,7 @@ interface SphereSceneProps {
   activeTab?: string; // Accept any string
   clusterData?: any;
   clusterEmbeddings?: ClusterData | null; // Add with proper typing
+  showDefaultObjects?: boolean; // Add this prop
 }
 
 // Add this before your SphereScene component, outside any function
@@ -86,6 +89,7 @@ export default function SphereScene({
   removedEmbeddings,
   activeTab = "clusters",
   clusterEmbeddings,
+  showDefaultObjects = true, // Default to showing the objects
 }: SphereSceneProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const isDraggingRef = useRef(false);
@@ -105,6 +109,7 @@ export default function SphereScene({
   const controlsRef = useRef<OrbitControls | null>(null);
   const pointsRef = useRef<THREE.Group | null>(null);
   const removedPointsRef = useRef<THREE.Group | null>(null);
+  const defaultObjectsRef = useRef<THREE.Group | null>(null); // Add this ref
 
   // Add velocity tracking for momentum
   const velocityRef = useRef({ x: 0, y: 0 });
@@ -207,104 +212,64 @@ export default function SphereScene({
     const lineGroup = new THREE.Group();
     sphereGroup.add(lineGroup);
 
-    // Custom shader material definitions
-    const vertexShader = `
-      varying vec3 vNormal;
-      varying vec3 vPosition;
-      varying vec2 vUv;
-      uniform float time;
-      uniform float pulseIntensity;
-      uniform bool isActiveCluster;
+    // Create default objects (red sphere and text)
+    const defaultGroup = new THREE.Group();
+    scene.add(defaultGroup);
+    defaultObjectsRef.current = defaultGroup;
+
+    // Add a red sphere
+    const geometry = new THREE.SphereGeometry(1, 32, 32);
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xff3333,
+      roughness: 0.3,
+      metalness: 0.7,
+    });
+    const sphere = new THREE.Mesh(geometry, material);
+    defaultGroup.add(sphere);
+
+    // Add text using a canvas texture
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (context) {
+      canvas.width = 512;
+      canvas.height = 100;
+      context.fillStyle = 'black';
+      context.font = 'bold 50px Arial';
+      context.textAlign = 'center';
+      context.fillText('Upload and Fetch!', 256, 80);
       
-      void main() {
-        vNormal = normalize(normalMatrix * normal);
-        vPosition = position;
-        vUv = uv;
-        
-        // Add subtle vertex displacement for shimmer effect
-        vec3 newPosition = position + normal * sin(position.x * 10.0 + time * 2.0) * 0.01;
-        
-        // Add pulsing effect for cluster highlighting
-        float pulseFactor = 0.0;
-        if (isActiveCluster) {
-          // Create a pulsing effect
-          pulseFactor = sin(time * 2.0) * 0.5 + 0.5; // Oscillates between 0 and 1
-          
-          // Add a smaller base size increase (15%) plus a smaller pulsing component (15%)
-          newPosition += normal * (0.02 + pulseFactor * 0.10) * pulseIntensity;
-        }
-        
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(newPosition, 1.0);
-      }
-    `;
+      const texture = new THREE.CanvasTexture(canvas);
+      const textPlane = new THREE.Mesh(
+        new THREE.PlaneGeometry(4, 1),
+        new THREE.MeshBasicMaterial({ 
+          map: texture, 
+          transparent: true,
+          side: THREE.DoubleSide
+        })
+      );
+      textPlane.position.y = 2;
+      defaultGroup.add(textPlane);
+    }
 
-    const fragmentShader = `
-      varying vec3 vNormal;
-      varying vec3 vPosition;
-      uniform vec3 baseColor;
-      uniform float isHovered;
-      uniform float time;
-      
-      void main() {
-        // Calculate view direction
-        vec3 viewDirection = normalize(cameraPosition - vPosition);
-        float viewAngle = dot(vNormal, viewDirection);
-        
-        // Create shiny metallic effect with consistent lighting
-        vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
-        float diffuse = max(0.0, dot(vNormal, lightDir));
-        
-        // Add specular highlight with angle-dependent intensity
-        vec3 halfVector = normalize(lightDir + viewDirection);
-        float specular = pow(max(0.0, dot(vNormal, halfVector)), 30.0);
-        
-        // Scale specular based on viewing angle for more consistent appearance
-        specular *= mix(0.4, 0.8, viewAngle);
-        
-        // Create animated shimmer effect with reduced intensity at grazing angles
-        float shimmer = sin(vPosition.x * 20.0 + vPosition.y * 20.0 + vPosition.z * 20.0 + time * 3.0) * 0.5 + 0.5;
-        shimmer = pow(shimmer, 4.0) * 0.3 * viewAngle;
-        
-        // Combine all lighting effects with increased base illumination (0.5 instead of 0.4)
-        vec3 finalColor = baseColor * (0.5 + diffuse * 0.6);
-        
-        // Add enhanced specular highlight (0.6 instead of 0.5)
-        finalColor += vec3(1.0, 1.0, 1.0) * specular * 0.6;
-        
-        // Add shimmer with slightly increased intensity
-        finalColor += vec3(1.0, 1.0, 1.0) * shimmer * 1.2;
-        
-        // Add glow effect when hovered with angle-dependent intensity
-        if (isHovered > 0.0) {
-          // Increase brightness and add pulsing glow
-          float pulse = sin(time * 5.0) * 0.5 + 0.5;
-          // Scale brightness increase based on viewing angle
-          float brightnessScale = mix(0.8, 1.3, viewAngle);
-          finalColor = finalColor * brightnessScale + vec3(1.0, 1.0, 1.0) * pulse * 0.3 * viewAngle;
-        }
-        
-        gl_FragColor = vec4(finalColor, 1.0);
-      }
-    `;
+    // Add ambient light
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+    scene.add(ambientLight);
 
-    // Clock for animation timing
-    const clock = new THREE.Clock();
+    // Add directional light
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+    directionalLight.position.set(5, 5, 5);
+    scene.add(directionalLight);
 
-    // Raycaster for clicking spheres
-    const raycaster = new THREE.Raycaster();
-    const mouse = new THREE.Vector2();
-
-    // Store vector data with each sphere
-    const spheresWithData: {
-      sphere: THREE.Mesh;
-      dataPoint: DataPoint;
-      material: THREE.ShaderMaterial;
-      position: THREE.Vector3;
-    }[] = [];
-
-    // Render loop
+    // Regular render loop
     const animate = () => {
       requestAnimationFrame(animate);
+      
+      // Rotate the default sphere if it exists
+      if (defaultObjectsRef.current && defaultObjectsRef.current.visible) {
+        sphere.rotation.y += 0.01;
+        sphere.rotation.x += 0.005;
+      }
+      
       controls.update();
       renderer.render(scene, camera);
     };
@@ -316,6 +281,13 @@ export default function SphereScene({
       controls.dispose();
     };
   }, [activeTab]);
+
+  // Add effect to show/hide default objects based on prop
+  useEffect(() => {
+    if (defaultObjectsRef.current) {
+      defaultObjectsRef.current.visible = showDefaultObjects;
+    }
+  }, [showDefaultObjects]);
 
   // 2. Second effect: convert unbiasedEmbeddings into data points if clusters tab
   useEffect(() => {
@@ -879,6 +851,21 @@ export default function SphereScene({
     setSelectedCluster(selectedCluster === clusterId ? null : clusterId);
   };
 
+  // Add this function to get the letter for a cluster ID
+  const getClusterLetter = (clusterId: string, clusterEmbeddings: any) => {
+    if (!clusterEmbeddings?.clusters) return "?";
+    const clusterIds = Object.keys(clusterEmbeddings.clusters);
+    const index = clusterIds.indexOf(clusterId);
+    return index >= 0 ? String.fromCharCode(65 + index % 26) : "?";
+  };
+
+  // Add this function to clean markdown from analysis text
+  const cleanAnalysisText = (text: string) => {
+    if (!text) return "";
+    // Remove markdown asterisks from the beginning of the text
+    return text.replace(/^\*\*(.*?)\*\*/m, '$1');
+  };
+
   // Component return: conditionally render if not clusters
   if (activeTab !== "clusters") {
     return (
@@ -919,28 +906,30 @@ export default function SphereScene({
       {/* Cluster Legend */}
       {activeTab === "clusters" && clusterEmbeddings?.clusters && (
         <div className="absolute top-4 left-4 z-10 flex flex-col gap-3 max-w-md">
-          {/* Clusters Toggle Panel */}
-          <div className="bg-white/80 backdrop-blur-sm p-3 rounded-lg shadow-md max-h-[40vh] overflow-y-auto flex flex-col">
-            <div className="flex justify-between items-center mb-2">
+          {/* Clusters Toggle Panel - Slightly increased size */}
+          <div className="bg-white/80 backdrop-blur-sm p-3.5 rounded-lg shadow-md max-h-[45vh] overflow-y-auto flex flex-col">
+            <div className="flex justify-between items-center mb-2.5">
               <h3 className="text-sm font-semibold text-gray-800">Clusters</h3>
             </div>
-            <div className="space-y-2 flex-grow">
+            <div className="space-y-2.5 flex-grow">
               {Object.entries(clusterEmbeddings.clusters).map(
                 ([clusterId, clusterInfo]: [string, any], index) => {
                   const clusterColor =
                     clusterColors[index % clusterColors.length];
+                  // Use letters instead of cluster IDs
+                  const clusterLetter = String.fromCharCode(65 + index % 26); // A-Z (ASCII 65-90)
                   return (
                     <div
                       key={clusterId}
-                      className="flex items-center space-x-2 text-black"
+                      className="flex items-center space-x-2.5 text-black py-0.5"
                     >
-                      <div className="flex items-center ">
+                      <div className="flex items-center">
                         <input
                           type="checkbox"
                           id={`cluster-${clusterId}`}
                           checked={visibleClusters[clusterId] !== false}
                           onChange={() => toggleClusterVisibility(clusterId)}
-                          className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          className="w-4.5 h-4.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                         />
                       </div>
                       <label
@@ -948,12 +937,12 @@ export default function SphereScene({
                         className="flex-grow flex items-center cursor-pointer text-sm text-black"
                       >
                         <span
-                          className="inline-block w-3 h-3 mr-2 rounded-full"
+                          className="inline-block w-3.5 h-3.5 mr-2 rounded-full"
                           style={{
                             backgroundColor: `#${clusterColor.getHexString()}`,
                           }}
                         ></span>
-                        Cluster {clusterId}
+                        Cluster {clusterLetter}
                         {clusterInfo.size && (
                           <span className="text-xs text-gray-500 ml-1">
                             ({clusterInfo.size})
@@ -962,7 +951,7 @@ export default function SphereScene({
                       </label>
                       <button
                         onClick={() => selectCluster(clusterId)}
-                        className="ml-auto text-xs text-blue-500 hover:text-blue-700"
+                        className="ml-auto text-xs text-blue-500 hover:text-blue-700 font-medium"
                       >
                         {selectedCluster === clusterId ? "Hide" : "Info"}
                       </button>
@@ -972,14 +961,14 @@ export default function SphereScene({
               )}
             </div>
 
-            {/* Recenter button at the bottom of the panel */}
+            {/* Recenter button - slightly increased size */}
             <button
               onClick={handleRecenter}
-              className="mt-3 w-full py-2 bg-blue-50 hover:bg-blue-100 text-blue-600 font-medium rounded text-sm transition-colors duration-200 flex justify-center items-center"
+              className="mt-3 w-full py-2.5 bg-blue-50 hover:bg-blue-100 text-blue-600 font-medium rounded text-sm transition-colors duration-200 flex justify-center items-center"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
-                className="h-4 w-4 mr-1"
+                className="h-4.5 w-4.5 mr-2"
                 viewBox="0 0 20 20"
                 fill="currentColor"
               >
@@ -993,22 +982,24 @@ export default function SphereScene({
             </button>
           </div>
 
-          {/* Cluster Analysis Panel */}
+          {/* Cluster Analysis Panel - narrower but taller */}
           {selectedCluster && (
-            <div className="bg-white/80 backdrop-blur-sm p-3 rounded-lg shadow-md max-h-[40vh] overflow-y-auto">
-              <div className="flex justify-between items-center mb-2">
+            <div className="bg-white/80 backdrop-blur-sm p-3.5 rounded-lg shadow-md max-h-[60vh] max-w-xs overflow-y-auto">
+              <div className="flex justify-between items-center mb-2.5">
                 <h3 className="text-sm font-semibold text-gray-800">
-                  Cluster {selectedCluster} Analysis
+                  Cluster {getClusterLetter(selectedCluster, clusterEmbeddings)} Analysis
                 </h3>
                 <button
                   onClick={() => setSelectedCluster(null)}
-                  className="text-gray-500 hover:text-gray-700"
+                  className="text-gray-500 hover:text-gray-700 text-base"
                 >
                   <span className="sr-only">Close</span>✕
                 </button>
               </div>
-              <div className="text-sm text-gray-600 whitespace-pre-wrap">
-                {clusterAnalyses[selectedCluster] || "Loading analysis..."}
+              <div className="text-sm text-gray-600 whitespace-pre-wrap leading-relaxed">
+                {clusterAnalyses[selectedCluster] ? 
+                  cleanAnalysisText(clusterAnalyses[selectedCluster]) : 
+                  "Loading analysis..."}
               </div>
             </div>
           )}

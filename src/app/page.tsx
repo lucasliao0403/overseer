@@ -88,6 +88,10 @@ export default function Home() {
   const [clusterCount, setClusterCount] = useState<number>(5); // Default number of clusters
   const [aggressiveness, setAggressiveness] = useState<number>(50); // Default aggressiveness (0-100)
   const [isTabTransitioning, setIsTabTransitioning] = useState<boolean>(false);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'processing' | 'complete' | 'error'>('idle');
+  const [showSuccessNotification, setShowSuccessNotification] = useState<boolean>(false);
+  const [showDefaultObjects, setShowDefaultObjects] = useState<boolean>(true);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -123,6 +127,7 @@ export default function Home() {
     let interval: NodeJS.Timeout;
 
     if (jobId && ["processing", "running"].includes(jobStatus || "")) {
+      setUploadStatus('processing');
       interval = setInterval(async () => {
         try {
           const status = (await getJobStatus(jobId)) as JobStatusResponse;
@@ -130,6 +135,9 @@ export default function Home() {
           setProcessingLog(status.log || "");
 
           if (status.status === "completed") {
+            setUploadStatus('complete');
+            setShowSuccessNotification(true);
+            
             // Refresh data when job completes
             const resumesData = (await getCleanedResumes(
               1,
@@ -174,12 +182,26 @@ export default function Home() {
             }
 
             setIsLoading(false);
+            
+            // Clear job ID after successful completion
+            setTimeout(() => {
+              setJobId(null);
+              setJobStatus(null);
+            }, 3000);
+            
+            // Clear the success message after animation completes (3.5s)
+            setTimeout(() => {
+              setUploadStatus('idle');
+              setShowSuccessNotification(false);
+            }, 3500);
+            setShowDefaultObjects(false);
           } else if (status.status === "failed") {
+            setUploadStatus('error');
             setIsLoading(false);
-            alert("Processing failed. Please check the logs.");
           }
         } catch (error) {
           console.error("Error checking job status:", error);
+          setUploadStatus('error');
         }
       }, 2000); // Check every 2 seconds
     }
@@ -205,13 +227,9 @@ export default function Home() {
       const blob = await downloadFile("unbiased_resumes");
       if (blob) {
         saveFile(blob, "unbiased_resumes.csv");
-        alert("Unbiased dataset downloaded successfully");
-      } else {
-        alert("Unbiased dataset not available. Please process a file first.");
       }
     } catch (error) {
       console.error("Error filtering files:", error);
-      alert("Error filtering files");
     } finally {
       setIsLoading(false);
     }
@@ -224,13 +242,9 @@ export default function Home() {
       const blob = await downloadFile("summary");
       if (blob) {
         saveFile(blob, "unbiasing_summary.txt");
-        alert("Summary downloaded successfully");
-      } else {
-        alert("Summary not available. Please process a file first.");
       }
     } catch (error) {
       console.error("Error downloading files:", error);
-      alert("Error downloading files");
     } finally {
       setIsLoading(false);
     }
@@ -240,7 +254,6 @@ export default function Home() {
     const file = e.target.files?.[0];
     if (file) {
       if (file.type !== "text/csv" && !file.name.endsWith(".csv")) {
-        alert("Please upload a CSV file");
         return;
       }
       setUploadedFile(file);
@@ -264,7 +277,6 @@ export default function Home() {
     const file = e.dataTransfer.files?.[0];
     if (file) {
       if (file.type !== "text/csv" && !file.name.endsWith(".csv")) {
-        alert("Please upload a CSV file");
         return;
       }
       setUploadedFile(file);
@@ -277,35 +289,41 @@ export default function Home() {
 
   const processUpload = async () => {
     if (!uploadedFile) {
-      alert("Please select a CSV file first");
       return;
     }
 
     setIsLoading(true);
+    setShowUploadModal(false);
+    setUploadStatus('uploading');
+    
+    // Simulate upload progress
+    const progressInterval = setInterval(() => {
+      setUploadProgress(prev => {
+        if (prev >= 90) {
+          clearInterval(progressInterval);
+          return 90;
+        }
+        return prev + Math.random() * 10;
+      });
+    }, 300);
+    
     try {
       // Upload the file to the backend
       const response = (await uploadDataset(uploadedFile)) as UploadResponse;
 
       if (response && response.job_id) {
+        clearInterval(progressInterval);
+        setUploadProgress(100);
         setJobId(response.job_id);
         setJobStatus("processing");
-
-        // Keep modal open to show progress
-        alert(
-          `File "${uploadedFile.name}" uploaded successfully. Processing started with job ID: ${response.job_id}`
-        );
+        setUploadStatus('processing');
       } else {
         throw new Error("Invalid response from server");
       }
     } catch (error) {
+      clearInterval(progressInterval);
+      setUploadStatus('error');
       console.error("Error processing file:", error);
-      alert(
-        `Error processing file: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -334,51 +352,43 @@ export default function Home() {
 
   const handleFetchEmbeddingsInfo = async () => {
     setIsLoading(true);
+    setShowDefaultObjects(false);
+    
     try {
-      // Fetch embeddings and clusters in parallel
-      console.log("Fetching embeddings and cluster info...");
-      const [unbiasedEmbeddings, removedEmbeddings, clusters] =
-        await Promise.all([
-          getUnbiasedEmbeddingsData(),
-          getRemovedEmbeddingsData(),
-          getAllClustersInfo(),
-        ]);
-
-      // Save data to state
-      setEmbeddingsData(unbiasedEmbeddings as EmbeddingsData);
-      setRemovedEmbeddingsData(removedEmbeddings as EmbeddingsData);
-      setClusterData(clusters as any);
-
-      // Log detailed info to console
+      // Get unbiased embeddings
+      const unbiasedEmbeddings = (await getUnbiasedEmbeddingsData()) as EmbeddingsData;
       console.log("Unbiased embeddings:", unbiasedEmbeddings);
+
+      // Get removed embeddings
+      const removedEmbeddings = (await getRemovedEmbeddingsData()) as EmbeddingsData;
       console.log("Removed embeddings:", removedEmbeddings);
 
-      // More detailed logging of cluster data
-      console.log("Cluster data:", clusters);
+      // Get all cluster analyses in one call
+      const clusterAnalyses = await getAllClusterAnalyses();
+      console.log("Retrieved all cluster analyses:", clusterAnalyses);
 
-      // Log cluster structure details
-      if (clusters && typeof clusters === "object") {
-        const clusterInfo = clusters as ClustersInfoResponse;
+      // Get full clusters info in one call
+      const clustersInfo = (await getAllClustersInfo()) as ClustersInfoResponse;
+      console.log("Retrieved complete clusters info:", clustersInfo);
 
-        if (clusterInfo.clusters) {
-          console.log(
-            "Number of clusters:",
-            Object.keys(clusterInfo.clusters).length
-          );
-        }
-      }
+      // Update state with fetched data
+      setEmbeddingsData(unbiasedEmbeddings);
+      setRemovedEmbeddingsData(removedEmbeddings);
+      setClusterData(clustersInfo);
 
-      // Show success message
-      alert(
-        `Successfully fetched embeddings and clusters data. Check the console.`
-      );
-
-      return { unbiasedEmbeddings, removedEmbeddings, clusters };
-    } catch (error) {
-      console.error("Error fetching data:", error);
-      alert("Error fetching data. See console for details.");
-    } finally {
       setIsLoading(false);
+      
+      // Remove this alert or replace with a more subtle indication
+      // alert("Successfully fetched embeddings and clusters data. Check the console.");
+      
+      // Optional: You can update a state variable to show a status in the UI instead
+      // setFetchStatus('success');
+    } catch (error) {
+      console.error("Error fetching embeddings info:", error);
+      setIsLoading(false);
+      
+      // Remove this alert
+      // alert("Error fetching embeddings info. Please try again.");
     }
   };
 
@@ -423,6 +433,7 @@ export default function Home() {
             removedEmbeddings={removedEmbeddingsData}
             clusterEmbeddings={clusterData}
             activeTab={activeTab}
+            showDefaultObjects={showDefaultObjects}
           />
         ) : (
           <></>
@@ -516,6 +527,84 @@ export default function Home() {
               </details>
             </div>
           )}
+        </div>
+      )}
+
+      {/* New Upload Progress Overlay */}
+      {uploadStatus !== 'idle' && uploadStatus !== 'complete' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4 animate-fadeIn">
+            <div className="text-center">
+              {uploadStatus === 'uploading' && (
+                <>
+                  <div className="mb-4">
+                    <svg className="w-16 h-16 mx-auto text-blue-500 animate-bounce" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                  </div>
+                  <h3 className="text-xl font-bold mb-2 text-black">Uploading {uploadedFile?.name}</h3>
+                  <div className="w-full bg-gray-200 rounded-full h-2.5 mb-4">
+                    <div className="bg-blue-500 h-2.5 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }}></div>
+                  </div>
+                  <p className="text-gray-600">Please wait while we upload your file...</p>
+                </>
+              )}
+              
+              {uploadStatus === 'processing' && (
+                <>
+                  <div className="mb-4">
+                    <svg className="w-16 h-16 mx-auto text-blue-500 animate-spin" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                  </div>
+                  <h3 className="text-xl font-bold mb-2 text-black">Processing Data</h3>
+                  <p className="text-gray-600 mb-4">Analyzing and clustering your data...</p>
+                  <div className="flex justify-center space-x-1">
+                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse delay-150"></div>
+                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse delay-300"></div>
+                  </div>
+                </>
+              )}
+              
+              {uploadStatus === 'error' && (
+                <>
+                  <div className="mb-4">
+                    <svg className="w-16 h-16 mx-auto text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <h3 className="text-xl font-bold mb-2 text-red-600">Processing Failed</h3>
+                  <p className="text-gray-600 mb-4">There was an error processing your file.</p>
+                  <button 
+                    onClick={() => setUploadStatus('idle')}
+                    className="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                  >
+                    Close
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Success notification that automatically disappears with fade-out animation */}
+      {showSuccessNotification && (
+        <div className="fixed top-4 right-4 z-50 bg-green-50 border-l-4 border-green-500 p-4 rounded shadow-lg animate-fadeOut">
+          <div className="flex">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <p className="text-sm font-medium text-green-800">
+                Processing complete! Your data is ready.
+              </p>
+            </div>
+          </div>
         </div>
       )}
 
