@@ -883,8 +883,7 @@ export default function SphereScene({
   if (activeTab !== "clusters") {
     return (
       <div className="min-h-screen bg-gray-50 p-6 pt-24">
-        {/* Put whatever you need for non-clusters tab */}
-        Non-clusters content here...
+        {/* Empty div instead of placeholder text */}
       </div>
     );
   }

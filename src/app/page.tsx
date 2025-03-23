@@ -87,6 +87,7 @@ export default function Home() {
   const [clusterData, setClusterData] = useState<any>(null);
   const [clusterCount, setClusterCount] = useState<number>(5); // Default number of clusters
   const [aggressiveness, setAggressiveness] = useState<number>(50); // Default aggressiveness (0-100)
+  const [isTabTransitioning, setIsTabTransitioning] = useState<boolean>(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -391,9 +392,29 @@ export default function Home() {
     setAggressiveness(parseInt(e.target.value));
   };
 
+  // Add this function to handle tab switching with delay
+  const handleTabSwitch = (tab: string) => {
+    // If already on this tab or transitioning, do nothing
+    if (activeTab === tab || isTabTransitioning) return;
+    
+    // If switching from analysis to clusters, add delay
+    if (activeTab === "bias" && tab === "clusters") {
+      setIsTabTransitioning(true);
+      
+      // Set a timeout to actually change the tab after 500ms
+      setTimeout(() => {
+        setActiveTab(tab);
+        setIsTabTransitioning(false);
+      }, 75);
+    } else {
+      // For other transitions, switch immediately
+      setActiveTab(tab);
+    }
+  };
+
   return (
     <main className="relative min-h-screen">
-      {/* Main content area - conditionally render based on activeTab */}
+      {/* Main content area - always render SphereScene now */}
       <div className="w-full h-screen">
         {activeTab === "clusters" ? (
           <SphereScene
@@ -401,13 +422,14 @@ export default function Home() {
             unbiasedEmbeddings={embeddingsData}
             removedEmbeddings={removedEmbeddingsData}
             clusterEmbeddings={clusterData}
+            activeTab={activeTab}
           />
         ) : (
           <></>
         )}
       </div>
 
-      {/* Navigation Tabs */}
+      {/* Navigation Tabs - updated to use handleTabSwitch */}
       <div className="fixed top-8 left-1/2 transform -translate-x-1/2 z-20">
         <div className="bg-white/90 rounded-full shadow-lg p-1 flex relative">
           {/* Animated background that moves based on active tab */}
@@ -419,22 +441,24 @@ export default function Home() {
             }`}
           />
           <button
-            onClick={() => setActiveTab("clusters")}
+            onClick={() => handleTabSwitch("clusters")}
+            disabled={isTabTransitioning}
             className={`px-8 py-3 rounded-full text-lg font-medium transition-all relative z-10 ${
               activeTab === "clusters"
                 ? "text-white"
                 : "text-gray-700 hover:text-gray-900"
-            }`}
+            } ${isTabTransitioning ? "cursor-not-allowed opacity-70" : ""}`}
           >
             Clusters
           </button>
           <button
-            onClick={() => setActiveTab("bias")}
+            onClick={() => handleTabSwitch("bias")}
+            disabled={isTabTransitioning}
             className={`px-8 py-3 rounded-full text-lg font-medium transition-all relative z-10 ${
               activeTab === "bias"
                 ? "text-white"
                 : "text-gray-700 hover:text-gray-900"
-            }`}
+            } ${isTabTransitioning ? "cursor-not-allowed opacity-70" : ""}`}
           >
             Analysis
           </button>
