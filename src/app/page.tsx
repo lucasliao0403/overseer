@@ -14,7 +14,6 @@ import {
   getUnbiasedEmbeddingsData,
   getRemovedEmbeddingsData,
 } from "../api/apiClient";
-import BiasAnalysisScreen from "@/components/BiasAnalysisScreen";
 
 // Define interfaces for our API responses
 interface Resume {
@@ -385,8 +384,10 @@ export default function Home() {
   const handleClusterCountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setClusterCount(parseInt(e.target.value));
   };
-  
-  const handleAggressivenessChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+
+  const handleAggressivenessChange = (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
     setAggressiveness(parseInt(e.target.value));
   };
 
@@ -395,16 +396,14 @@ export default function Home() {
       {/* Main content area - conditionally render based on activeTab */}
       <div className="w-full h-screen">
         {activeTab === "clusters" ? (
-          <SphereScene 
-            clusterData={clusterData} 
+          <SphereScene
+            clusterData={clusterData}
             unbiasedEmbeddings={embeddingsData}
             removedEmbeddings={removedEmbeddingsData}
             clusterEmbeddings={clusterData}
           />
         ) : (
-          <BiasAnalysisScreen 
-            activeCluster={clusterData} 
-          />
+          <></>
         )}
       </div>
 
@@ -412,10 +411,10 @@ export default function Home() {
       <div className="fixed top-8 left-1/2 transform -translate-x-1/2 z-20">
         <div className="bg-white/90 rounded-full shadow-lg p-1 flex relative">
           {/* Animated background that moves based on active tab */}
-          <div 
+          <div
             className={`absolute top-1 bottom-1 rounded-full bg-black transition-all duration-300 ease-in-out ${
-              activeTab === "clusters" 
-                ? "left-1 right-[calc(50%+1px)]" 
+              activeTab === "clusters"
+                ? "left-1 right-[calc(50%+1px)]"
                 : "left-[calc(50%+1px)] right-1"
             }`}
           />
@@ -573,21 +572,32 @@ export default function Home() {
                     ? `Selected: ${uploadedFile.name}`
                     : "Drop CSV file here or click to browse"}
                 </p>
-                <p className="text-xs text-gray-500">Supports CSV files with Resume_str column</p>
+                <p className="text-xs text-gray-500">
+                  Supports CSV files with Resume_str column
+                </p>
               </div>
 
               {/* Control panel */}
               <div className="bg-gray-50 p-4 rounded-xl mb-6">
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-semibold text-gray-900">Controls</h3>
+                  <h3 className="text-sm font-semibold text-gray-900">
+                    Controls
+                  </h3>
                 </div>
-                
+
                 <div className="grid grid-cols-2 gap-4">
                   {/* Number of clusters */}
                   <div>
                     <div className="flex justify-between items-center mb-1">
-                      <label htmlFor="cluster-count" className="text-xs font-medium text-gray-700">Clusters</label>
-                      <span className="text-xs text-gray-500 bg-white px-1.5 py-0.5 rounded-md shadow-sm">{clusterCount}</span>
+                      <label
+                        htmlFor="cluster-count"
+                        className="text-xs font-medium text-gray-700"
+                      >
+                        Clusters
+                      </label>
+                      <span className="text-xs text-gray-500 bg-white px-1.5 py-0.5 rounded-md shadow-sm">
+                        {clusterCount}
+                      </span>
                     </div>
                     <input
                       id="cluster-count"
@@ -603,12 +613,19 @@ export default function Home() {
                       <span>20</span>
                     </div>
                   </div>
-                  
+
                   {/* Aggressiveness */}
                   <div>
                     <div className="flex justify-between items-center mb-1">
-                      <label htmlFor="aggressiveness" className="text-xs font-medium text-gray-700">Aggressiveness</label>
-                      <span className="text-xs text-gray-500 bg-white px-1.5 py-0.5 rounded-md shadow-sm">{aggressiveness}%</span>
+                      <label
+                        htmlFor="aggressiveness"
+                        className="text-xs font-medium text-gray-700"
+                      >
+                        Aggressiveness
+                      </label>
+                      <span className="text-xs text-gray-500 bg-white px-1.5 py-0.5 rounded-md shadow-sm">
+                        {aggressiveness}%
+                      </span>
                     </div>
                     <input
                       id="aggressiveness"

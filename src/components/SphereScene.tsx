@@ -133,7 +133,10 @@ export default function SphereScene({
   } | null>(null);
 
   // Add these new state variables to track the hover position
-  const [hoverPosition, setHoverPosition] = useState<{x: number, y: number} | null>(null);
+  const [hoverPosition, setHoverPosition] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
 
   // Standalone useEffect for initializing visibility state
   useEffect(() => {
@@ -446,11 +449,11 @@ export default function SphereScene({
     // Create a fixed color map based on cluster IDs
     const clusterIds = Object.keys(clusters).map((id) => parseInt(id, 10));
     console.log(`Found ${clusterIds.length} cluster IDs:`, clusterIds);
-    
+
     // Track hovered and active nodes
     let hoveredNode: THREE.Mesh | null = null;
     let selectedNode: THREE.Mesh | null = null;
-    
+
     // Raycaster for interaction
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
@@ -501,13 +504,13 @@ export default function SphereScene({
 
           // Create a sphere for this node - make it slightly larger (0.08 instead of 0.05)
           const geometry = new THREE.SphereGeometry(0.08, 16, 16);
-          
+
           // Create a shader material for better appearance and hover effects
           const material = new THREE.ShaderMaterial({
             uniforms: {
               baseColor: { value: clusterColor },
               isHovered: { value: 0.0 },
-              time: { value: 0.0 }
+              time: { value: 0.0 },
             },
             vertexShader: `
               varying vec3 vNormal;
@@ -570,7 +573,7 @@ export default function SphereScene({
                 
                 gl_FragColor = vec4(finalColor, 1.0);
               }
-            `
+            `,
           });
 
           const mesh = new THREE.Mesh(geometry, material);
@@ -585,7 +588,7 @@ export default function SphereScene({
             id: emb.id || nodeIndex,
             cluster_id: clusterId,
             resume_id: emb.resume_id || 0,
-            material: material  // Store reference to material for hover effects
+            material: material, // Store reference to material for hover effects
           };
 
           clusterGroup.add(mesh);
@@ -651,7 +654,7 @@ export default function SphereScene({
     // Animation loop to update shader uniforms
     const animate = () => {
       const elapsedTime = clock.getElapsedTime();
-      
+
       // Update all materials
       allClustersGroup.traverse((object) => {
         if (object instanceof THREE.Mesh && object.userData.material) {
@@ -661,10 +664,10 @@ export default function SphereScene({
           }
         }
       });
-      
+
       requestAnimationFrame(animate);
     };
-    
+
     animate();
 
     // Add mouse move handler for hover detection
@@ -672,50 +675,57 @@ export default function SphereScene({
       // Calculate mouse position in normalized device coordinates
       const rect = canvasRef.current?.getBoundingClientRect();
       if (!rect) return;
-      
+
       mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-      
+
       // Update the raycaster
       if (!cameraRef.current) return;
       raycaster.setFromCamera(mouse, cameraRef.current);
-      
+
       // Find intersections with spheres
-      const intersects = raycaster.intersectObjects(allClustersGroup.children, true);
-      
+      const intersects = raycaster.intersectObjects(
+        allClustersGroup.children,
+        true
+      );
+
       // Reset previous hover state
       if (hoveredNode && hoveredNode.userData.material) {
-        (hoveredNode.userData.material as THREE.ShaderMaterial).uniforms.isHovered.value = 0.0;
+        (
+          hoveredNode.userData.material as THREE.ShaderMaterial
+        ).uniforms.isHovered.value = 0.0;
       }
-      
+
       if (intersects.length > 0) {
         // Get the first intersected object
         const object = intersects[0].object as THREE.Mesh;
-        
+
         // Check if it has userData
         if (object.userData && object.userData.id !== undefined) {
           // Set the hovered node data for info display
           setHoveredNode({
             id: object.userData.id,
             cluster_id: object.userData.cluster_id,
-            resume_id: object.userData.resume_id
+            resume_id: object.userData.resume_id,
           });
-          
+
           // Calculate the position for the hover panel
           // Convert 3D position to screen coordinates
           const vector = new THREE.Vector3();
           vector.setFromMatrixPosition(object.matrixWorld);
           vector.project(cameraRef.current);
-          
+
           const x = (vector.x * 0.5 + 0.5) * rect.width + rect.left;
           const y = (-(vector.y * 0.5) + 0.5) * rect.height + rect.top;
-          
+
           // Set hover position (offset slightly above and to the right)
           setHoverPosition({ x: x + 20, y: y - 60 });
-          
+
           // Apply hover effect
           if (object.userData.material) {
-            (object.userData.material as THREE.ShaderMaterial).uniforms.isHovered.value = 1.0;
+            (
+              object.userData.material as THREE.ShaderMaterial
+            ).uniforms.isHovered.value = 1.0;
             hoveredNode = object;
           }
         }
@@ -726,62 +736,70 @@ export default function SphereScene({
         hoveredNode = null;
       }
     };
-    
+
     // Add mouse leave handler
     const handleMouseLeave = () => {
       setHoveredNode(null);
       setHoverPosition(null);
       if (hoveredNode && hoveredNode.userData.material) {
-        (hoveredNode.userData.material as THREE.ShaderMaterial).uniforms.isHovered.value = 0.0;
+        (
+          hoveredNode.userData.material as THREE.ShaderMaterial
+        ).uniforms.isHovered.value = 0.0;
       }
       hoveredNode = null;
     };
-    
+
     // Add event listeners
-    canvasRef.current?.addEventListener('mousemove', handleMouseMove);
-    canvasRef.current?.addEventListener('mouseleave', handleMouseLeave);
+    canvasRef.current?.addEventListener("mousemove", handleMouseMove);
+    canvasRef.current?.addEventListener("mouseleave", handleMouseLeave);
 
     // Add the recenterCamera function to the window object
     window.recenterCamera = () => {
       if (!cameraRef.current || !controlsRef.current) return;
-      
+
       const camera = cameraRef.current;
       const controls = controlsRef.current;
-      
+
       // 1. Capture current camera position and rotation
       const startPosition = camera.position.clone();
       const startTarget = controls.target.clone();
-      
+
       // 2. Define target values (centered view)
       const targetPosition = new THREE.Vector3(0, 0, 6);
       const targetTarget = new THREE.Vector3(0, 0, 0);
       const duration = 1000; // 1 second
-      
+
       // 3. Set up animation
       const startTime = performance.now();
       const animateReset = (currentTime: number) => {
         const elapsed = currentTime - startTime;
         const progress = Math.min(elapsed / duration, 1);
         const easeProgress = 1 - Math.pow(1 - progress, 3); // easeOutCubic
-        
+
         // Interpolate position
-        camera.position.x = startPosition.x + (targetPosition.x - startPosition.x) * easeProgress;
-        camera.position.y = startPosition.y + (targetPosition.y - startPosition.y) * easeProgress;
-        camera.position.z = startPosition.z + (targetPosition.z - startPosition.z) * easeProgress;
-        
+        camera.position.x =
+          startPosition.x + (targetPosition.x - startPosition.x) * easeProgress;
+        camera.position.y =
+          startPosition.y + (targetPosition.y - startPosition.y) * easeProgress;
+        camera.position.z =
+          startPosition.z + (targetPosition.z - startPosition.z) * easeProgress;
+
         // Interpolate target (what the camera is looking at)
-        controls.target.x = startTarget.x + (targetTarget.x - startTarget.x) * easeProgress;
-        controls.target.y = startTarget.y + (targetTarget.y - startTarget.y) * easeProgress;
-        controls.target.z = startTarget.z + (targetTarget.z - startTarget.z) * easeProgress;
-        
+        controls.target.x =
+          startTarget.x + (targetTarget.x - startTarget.x) * easeProgress;
+        controls.target.y =
+          startTarget.y + (targetTarget.y - startTarget.y) * easeProgress;
+        controls.target.z =
+          startTarget.z + (targetTarget.z - startTarget.z) * easeProgress;
+
         // Update controls
         controls.update();
-        
+
         if (progress < 1) {
           requestAnimationFrame(animateReset);
         }
       };
-      
+
       requestAnimationFrame(animateReset);
     };
 
@@ -807,8 +825,8 @@ export default function SphereScene({
       });
 
       // Remove event listeners
-      canvasRef.current?.removeEventListener('mousemove', handleMouseMove);
-      canvasRef.current?.removeEventListener('mouseleave', handleMouseLeave);
+      canvasRef.current?.removeEventListener("mousemove", handleMouseMove);
+      canvasRef.current?.removeEventListener("mouseleave", handleMouseLeave);
 
       // Clean up the window object
       delete window.recenterCamera;
@@ -878,15 +896,17 @@ export default function SphereScene({
 
       {/* Hover Information Box - positioned based on sphere location */}
       {hoveredNode && hoverPosition && (
-        <div 
+        <div
           className="absolute z-10 bg-white/90 backdrop-blur-sm p-3 rounded-lg shadow-md max-w-xs"
           style={{
             left: `${hoverPosition.x}px`,
             top: `${hoverPosition.y}px`,
-            transform: 'translate(0, -100%)'
+            transform: "translate(0, -100%)",
           }}
         >
-          <h3 className="text-sm font-semibold text-gray-800">Node Information</h3>
+          <h3 className="text-sm font-semibold text-gray-800">
+            Node Information
+          </h3>
           <div className="text-sm text-gray-600 mt-1">
             <p>ID: {hoveredNode.id}</p>
             <p>Cluster: {hoveredNode.cluster_id}</p>
@@ -903,9 +923,7 @@ export default function SphereScene({
           {/* Clusters Toggle Panel */}
           <div className="bg-white/80 backdrop-blur-sm p-3 rounded-lg shadow-md max-h-[40vh] overflow-y-auto flex flex-col">
             <div className="flex justify-between items-center mb-2">
-              <h3 className="text-sm font-semibold text-gray-800">
-                Clusters
-              </h3>
+              <h3 className="text-sm font-semibold text-gray-800">Clusters</h3>
             </div>
             <div className="space-y-2 flex-grow">
               {Object.entries(clusterEmbeddings.clusters).map(
@@ -915,9 +933,9 @@ export default function SphereScene({
                   return (
                     <div
                       key={clusterId}
-                      className="flex items-center space-x-2"
+                      className="flex items-center space-x-2 text-black"
                     >
-                      <div className="flex items-center">
+                      <div className="flex items-center ">
                         <input
                           type="checkbox"
                           id={`cluster-${clusterId}`}
@@ -928,7 +946,7 @@ export default function SphereScene({
                       </div>
                       <label
                         htmlFor={`cluster-${clusterId}`}
-                        className="flex-grow flex items-center cursor-pointer text-sm"
+                        className="flex-grow flex items-center cursor-pointer text-sm text-black"
                       >
                         <span
                           className="inline-block w-3 h-3 mr-2 rounded-full"
@@ -954,14 +972,23 @@ export default function SphereScene({
                 }
               )}
             </div>
-            
+
             {/* Recenter button at the bottom of the panel */}
             <button
               onClick={handleRecenter}
               className="mt-3 w-full py-2 bg-blue-50 hover:bg-blue-100 text-blue-600 font-medium rounded text-sm transition-colors duration-200 flex justify-center items-center"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M4 2a2 2 0 00-2 2v11a3 3 0 106 0V4a2 2 0 00-2-2H4zm1 14a1 1 0 100-2 1 1 0 000 2zm5-1.757l4.9-4.9a2 2 0 000-2.828L13.485 5.1a2 2 0 00-2.828 0L10 5.757v8.486zM16 18H9.071l6-6H16a2 2 0 012 2v2a2 2 0 01-2 2z" clipRule="evenodd" />
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-4 w-4 mr-1"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M4 2a2 2 0 00-2 2v11a3 3 0 106 0V4a2 2 0 00-2-2H4zm1 14a1 1 0 100-2 1 1 0 000 2zm5-1.757l4.9-4.9a2 2 0 000-2.828L13.485 5.1a2 2 0 00-2.828 0L10 5.757v8.486zM16 18H9.071l6-6H16a2 2 0 012 2v2a2 2 0 01-2 2z"
+                  clipRule="evenodd"
+                />
               </svg>
               Recenter View
             </button>
@@ -988,7 +1015,7 @@ export default function SphereScene({
           )}
         </div>
       )}
-      
+
       {/* Information box in bottom right corner */}
       <div className="absolute bottom-4 right-4 bg-gray-700/80 text-white p-3 rounded-lg shadow-lg max-w-xs">
         <p className="text-sm">Click on spheres to view details</p>
