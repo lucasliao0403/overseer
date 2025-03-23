@@ -183,17 +183,17 @@ export default function Home() {
 
             setIsLoading(false);
             
-            // Clear job ID after successful completion
+            // Clear job ID after successful completion - reduced from 3000ms to 2000ms
             setTimeout(() => {
               setJobId(null);
               setJobStatus(null);
-            }, 3000);
+            }, 2000);
             
-            // Clear the success message after animation completes (3.5s)
+            // Clear the success message after animation completes - reduced from 3500ms to 2000ms
             setTimeout(() => {
               setUploadStatus('idle');
               setShowSuccessNotification(false);
-            }, 3500);
+            }, 2000);
             setShowDefaultObjects(false);
           } else if (status.status === "failed") {
             setUploadStatus('error');
@@ -422,6 +422,28 @@ export default function Home() {
     }
   };
 
+  // Update the CSS animation duration in globals.css or add this style tag to your layout.tsx
+  useEffect(() => {
+    // Add a style tag to the document head
+    const styleTag = document.createElement('style');
+    styleTag.innerHTML = `
+      @keyframes fadeOut {
+        0% { opacity: 1; }
+        80% { opacity: 1; }
+        100% { opacity: 0; }
+      }
+      .animate-fadeOut {
+        animation: fadeOut 2s forwards;
+      }
+    `;
+    document.head.appendChild(styleTag);
+    
+    // Clean up
+    return () => {
+      document.head.removeChild(styleTag);
+    };
+  }, []);
+
   return (
     <main className="relative min-h-screen">
       {/* Main content area - always render SphereScene now */}
@@ -439,6 +461,13 @@ export default function Home() {
         ) : (
           <></>
         )}
+      </div>
+
+      {/* Logo at top left with good padding - persistent across all tabs */}
+      <div className="fixed top-8 left-10 z-20">
+        <h1 className="font-serif text-6xl font-bold text-black drop-shadow-md">
+          Overseer
+        </h1>
       </div>
 
       {/* Navigation Tabs - updated to use handleTabSwitch */}
@@ -477,35 +506,34 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Button container - moved to top right */}
-      <div className="fixed top-8 right-8 z-20 flex gap-4">
+      {/* Action buttons - vertical on right side */}
+      <div className="fixed right-10 top-16 z-20 flex flex-col space-y-4">
         <button
-          onClick={() => setShowUploadModal(true)}
-          disabled={isLoading}
-          className="px-4 py-2 bg-white text-black border border-gray-200 shadow-sm rounded-lg hover:bg-gray-100 transition-all hover:scale-110 disabled:opacity-50"
+          onClick={handleUpload}
+          className="bg-white hover:bg-gray-100 text-gray-800 font-semibold py-2 px-4 border border-gray-400 rounded-md shadow"
         >
-          {isLoading ? "Processing..." : "Upload"}
+          Upload
         </button>
+        
         <button
           onClick={handleFilter}
-          disabled={isLoading}
-          className="px-4 py-2 bg-white text-black border border-gray-200 shadow-sm rounded-lg hover:bg-gray-100 transition-all hover:scale-110 disabled:opacity-50"
+          className="bg-white hover:bg-gray-100 text-gray-800 font-semibold py-2 px-4 border border-gray-400 rounded-md shadow"
         >
-          {isLoading ? "Processing..." : "Get Unbiased Data"}
+          Get Unbiased Data
         </button>
+        
         <button
           onClick={handleDownload}
-          disabled={isLoading}
-          className="px-4 py-2 bg-white text-black border border-gray-200 shadow-sm rounded-lg hover:bg-gray-100 transition-all hover:scale-110 disabled:opacity-50"
+          className="bg-white hover:bg-gray-100 text-gray-800 font-semibold py-2 px-4 border border-gray-400 rounded-md shadow"
         >
-          {isLoading ? "Processing..." : "Download Summary"}
+          Download Summary
         </button>
+        
         <button
           onClick={handleFetchEmbeddingsInfo}
-          disabled={isLoading}
-          className="px-4 py-2 bg-white text-black border border-gray-200 shadow-sm rounded-lg hover:bg-gray-100 transition-all hover:scale-110 disabled:opacity-50"
+          className="bg-white hover:bg-gray-100 text-gray-800 font-semibold py-2 px-4 border border-gray-400 rounded-md shadow"
         >
-          {isLoading ? "Processing..." : "Fetch Embeddings Info"}
+          Fetch Embeddings Info
         </button>
       </div>
 
@@ -591,9 +619,9 @@ export default function Home() {
         </div>
       )}
       
-      {/* Success notification that automatically disappears with fade-out animation */}
+      {/* Success notification at bottom right of screen, above instructions box */}
       {showSuccessNotification && (
-        <div className="fixed top-4 right-4 z-50 bg-green-50 border-l-4 border-green-500 p-4 rounded shadow-lg animate-fadeOut">
+        <div className="fixed bottom-28 right-4 z-50 bg-green-50 border-l-4 border-green-500 p-4 rounded shadow-lg animate-fadeOut w-full max-w-md">
           <div className="flex">
             <div className="flex-shrink-0">
               <svg className="h-5 w-5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
