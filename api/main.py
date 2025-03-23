@@ -17,6 +17,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Unbiasing pipeline")
     parser.add_argument("--input", type=str, help="Path to input CSV file")
     parser.add_argument("--job_id", type=str, help="Job ID for this processing task")
+    parser.add_argument("--bias_weight", type=float, default=5.0, help="Weight factor for biasing (0.2-30, lower = more aggressive)")
+    parser.add_argument("--cluster_count", type=int, default=5, help="Number of clusters to identify")
     return parser.parse_args()
 
 # Setup logging
@@ -86,6 +88,13 @@ def main():
     # Parse command-line arguments
     args = parse_args()
     
+    # Clean up previous run directories
+    for directory in ['clusters', 'unbiased_dataset', 'cluster_analysis']:
+        directory_path = os.path.join('api', directory)
+        if os.path.exists(directory_path):
+            logging.info(f"Cleaning up previous {directory} directory")
+            shutil.rmtree(directory_path)
+            os.makedirs(directory_path, exist_ok=True)
     # Setup logging
     log_file = setup_logging(args.job_id)
     
@@ -93,11 +102,16 @@ def main():
         # Set the input file path
         input_file = args.input
         job_id = args.job_id
+        bias_weight = args.bias_weight
+        cluster_count = args.cluster_count
         
         if input_file:
             logging.info(f"Using custom input file: {input_file}")
         else:
             logging.info("No input file specified, will use default dataset")
+            
+        logging.info(f"Using bias_weight: {bias_weight}")
+        logging.info(f"Using cluster_count: {cluster_count}")
         
         # Create job completion marker if job_id is provided
         job_dir = None
@@ -109,7 +123,7 @@ def main():
         logging.info("STEP 1: GENERATING EMBEDDINGS AND FINDING CLUSTERS")
         logging.info("=" * 80)
         
-        df, embeddings = embeddings_main(input_file)
+        df, embeddings = embeddings_main(input_file, bias_weight, cluster_count)
         
         if df is None or embeddings is None:
             logging.error("Failed to generate embeddings. Exiting.")

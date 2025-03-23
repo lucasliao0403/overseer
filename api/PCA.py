@@ -66,9 +66,34 @@ def process_embeddings(input_file):
     print("\nMin values for each embedding:")
     print(min_values)
 
+def process_all_embeddings():
+    """
+    Process all embedding files in the current directory and subdirectories
+    """
+    # Find all CSV files that might contain embeddings
+    embedding_files = []
+    for root, dirs, files in os.walk('.'):
+        for file in files:
+            if file.endswith('.csv') and 'embedding' in file.lower():
+                embedding_files.append(os.path.join(root, file))
+    
+    print(f"Found {len(embedding_files)} potential embedding files")
+    
+    # Process each file
+    for file in embedding_files:
+        process_embeddings(file)
+    
+    print("All files processed")
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Reduce dimensionality of embeddings to 6D using PCA')
-    parser.add_argument('input_file', type=str, help='Path to the input CSV file with embeddings')
+    parser.add_argument('--input_file', type=str, help='Path to the input CSV file with embeddings')
+    parser.add_argument('--process_all', action='store_true', help='Process all embedding files in the directory')
     args = parser.parse_args()
     
-    process_embeddings(args.input_file)
+    if args.process_all:
+        process_all_embeddings()
+    elif args.input_file:
+        process_embeddings(args.input_file)
+    else:
+        print("Please provide either --input_file or --process_all")

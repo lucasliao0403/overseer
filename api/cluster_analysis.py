@@ -177,7 +177,7 @@ def save_cluster_embeddings(cluster_df, cluster_num, clusters_dir):
     # Save 6D embeddings to a separate JSON file
     embeddings_6d_file = clusters_dir / f"cluster_{cluster_num}_embeddings_6d.json"
     with open(embeddings_6d_file, 'w') as f:
-        json.dump(embeddings_6d_data, f)
+        json.dump(embeddings_6d_data, f, indent=2)
     
     # Also save as NPY for more efficient loading
     embeddings_6d_npy_file = clusters_dir / f"cluster_{cluster_num}_embeddings_6d.npy"
@@ -326,7 +326,7 @@ def main():
         
         # Print a preview of the analysis
         print(f"ANALYSIS PREVIEW FOR CLUSTER {cluster_num}:")
-        print(analysis[:500] + "...\n")
+        print(analysis[:100] + "...\n")
     
     # Save all analyses to a single JSON file
     with open(output_dir / "all_clusters_analysis.json", "w") as f:

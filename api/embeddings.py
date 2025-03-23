@@ -5,6 +5,8 @@ import re
 import hdbscan
 from sklearn.neighbors import NearestNeighbors
 import os
+from sklearn.decomposition import PCA
+import argparse
 
 def clean_text(text):
     """Basic cleaning function for resume text"""
@@ -30,18 +32,36 @@ def generate_embeddings(df, resume_column='Resume_str', model_name="all-MiniLM-L
     
     return resume_embeddings
 
-def find_dense_clusters(embeddings, min_cluster_size=5, min_samples=5, n_clusters=3):
-    """Find the N densest clusters using HDBSCAN"""
-    print(f"Clustering {embeddings.shape[0]} embeddings...")
+def find_dense_clusters(embeddings, min_cluster_size, min_samples, n_clusters, bias_factor):
+    """Find the N densest clusters using HDBSCAN with bias weights
     
-    # Apply HDBSCAN clustering
+    Args:
+        embeddings: The embeddings to cluster
+        min_cluster_size: Minimum size of clusters
+        min_samples: HDBSCAN min_samples parameter
+        n_clusters: Number of densest clusters to return
+        bias_factor: Factor to reduce importance of last 3 dimensions (0-1, lower = more bias)
+    """
+    print(f"Clustering {embeddings.shape[0]} embeddings with bias weighting...")
+    
+    # Apply bias weights to the embeddings
+    # For 6D embeddings (from PCA), we'll reduce the importance of the last 3 dimensions
+    print(f"Applying bias weights with factor {bias_factor} to last 3 dimensions")
+    # Create a copy to avoid modifying the original
+    biased_embeddings = embeddings.copy()
+    
+    for i in range(len(biased_embeddings)):
+        for j in range(3):
+            biased_embeddings[i][-j] *= bias_factor
+    
+    # Apply HDBSCAN clustering on the biased embeddings
     clusterer = hdbscan.HDBSCAN(
         min_cluster_size=min_cluster_size,
         min_samples=min_samples,
         metric='euclidean',
         cluster_selection_method='eom'
     )
-    cluster_labels = clusterer.fit_predict(embeddings)
+    cluster_labels = clusterer.fit_predict(biased_embeddings)
     
     # Get number of unique clusters (excluding noise points labeled as -1)
     unique_clusters = np.unique(cluster_labels)
@@ -54,13 +74,13 @@ def find_dense_clusters(embeddings, min_cluster_size=5, min_samples=5, n_cluster
         print("No clusters found. Try adjusting parameters.")
         return [], []
     
-    # Calculate density for each cluster
+    # Calculate density for each cluster - use original embeddings for density calculation
     cluster_densities = {}
     cluster_indices = {}
     
     for label in unique_clusters:
         # Get points in this cluster
-        cluster_points = embeddings[cluster_labels == label]
+        cluster_points = embeddings[cluster_labels == label]  # Use original embeddings
         cluster_point_indices = np.where(cluster_labels == label)[0]
         
         # Calculate average distance to k nearest neighbors as a proxy for density
@@ -124,7 +144,43 @@ def save_clusters_to_csv(df, cluster_indices, output_dir="clusters"):
     combined_df.to_csv(combined_file, index=False)
     print(f"Saved combined file with all clusters to {combined_file}")
 
-def main(input_file=None):
+def apply_pca_to_embeddings(embeddings, n_components):
+    """
+    Apply PCA to reduce embedding dimensions and normalize the vectors.
+    
+    Args:
+        embeddings: Original high-dimensional embeddings
+        n_components: Number of PCA components to use (default: 6)
+        
+    Returns:
+        Normalized PCA-reduced embeddings
+    """
+    print(f"Applying PCA to reduce embeddings from {embeddings.shape[1]} to {n_components} dimensions...")
+    
+    # Apply PCA to reduce dimensions
+    pca = PCA(n_components=6)
+    try:
+        reduced_embeddings = pca.fit_transform(embeddings)
+        print(f"Explained variance ratio: {pca.explained_variance_ratio_}")
+        print(f"Total explained variance: {sum(pca.explained_variance_ratio_)*100:.2f}%")
+    except Exception as e:
+        print(f"Error during PCA: {e}")
+        return embeddings
+    
+    # Normalize the PCA vectors (L2 normalization)
+    def normalize_embeddings(embeddings):
+        """Normalize each embedding vector to unit length (L2 norm)"""
+        norms = np.sqrt(np.sum(np.square(embeddings), axis=1, keepdims=True))
+        norms = np.maximum(norms, 1e-10)  # Prevent division by zero
+        return embeddings / norms
+    
+    normalized_embeddings = normalize_embeddings(reduced_embeddings)
+    
+    print(f"Shape of PCA-reduced embeddings: {normalized_embeddings.shape}")
+    
+    return normalized_embeddings
+
+def main(input_file=None, bias_weight=0, cluster_count=0):
     # Load the resume dataset
     print("Loading resume dataset...")
     try:
@@ -166,23 +222,39 @@ def main(input_file=None):
         df.to_csv('cleaned_resumes.csv', index=False)
         print("Saved cleaned dataframe to cleaned_resumes.csv")
     
-    # Find the N densest clusters
-    n_clusters = 6  # Number of clusters to save
+    # Apply PCA to reduce dimensions before clustering
+    pca_embeddings = apply_pca_to_embeddings(resume_embeddings, 6)
+    
+    # Save the PCA embeddings for later use
+    np.save('resume_embeddings_pca.npy', pca_embeddings)
+    print("Saved PCA-reduced embeddings to resume_embeddings_pca.npy")
+    
+    # Find the N densest clusters using the PCA-reduced embeddings
+    # Use the provided cluster_count and bias_weight parameters
+    
+    print(f"Using bias_weight: {bias_weight} and cluster_count: {cluster_count}")
     _, densest_cluster_indices = find_dense_clusters(
-        resume_embeddings, 
+        pca_embeddings,       # Use PCA embeddings instead of original
         min_cluster_size=10,  # Adjust as needed
         min_samples=5,        # Adjust as needed
-        n_clusters=n_clusters
+        n_clusters=cluster_count,
+        bias_factor=bias_weight
     )
     
     # Save clusters to CSV files
     if densest_cluster_indices:
         save_clusters_to_csv(df, densest_cluster_indices)
     
-    return df, resume_embeddings
+    return df, pca_embeddings  # Return PCA embeddings instead of original
 
 if __name__ == "__main__":
-    df, embeddings = main()
+    parser = argparse.ArgumentParser(description="Generate embeddings and find clusters")
+    parser.add_argument("--input", type=str, help="Path to input CSV file")
+    parser.add_argument("--bias_weight", type=float, default=5.0, help="Weight factor for biasing (0.2-30, lower = more aggressive)")
+    parser.add_argument("--cluster_count", type=int, default=5, help="Number of clusters to identify")
+    args = parser.parse_args()
+    
+    df, embeddings = main(args.input, args.bias_weight, args.cluster_count)
  
 # # Optional: Calculate similarity matrix between resumes
 # # Warning: This can be memory-intensive for large datasets

@@ -283,8 +283,12 @@ export default function Home() {
 
     setIsLoading(true);
     try {
-      // Upload the file to the backend
-      const response = (await uploadDataset(uploadedFile)) as UploadResponse;
+      // Upload the file to the backend with aggressiveness and cluster count parameters
+      const response = (await uploadDataset(
+        uploadedFile, 
+        clusterCount, 
+        aggressiveness
+      )) as UploadResponse;
 
       if (response && response.job_id) {
         setJobId(response.job_id);
@@ -417,13 +421,15 @@ export default function Home() {
       {/* Main content area - always render SphereScene now */}
       <div className="w-full h-screen">
         {activeTab === "clusters" ? (
-          <SphereScene
-            clusterData={clusterData}
-            unbiasedEmbeddings={embeddingsData}
-            removedEmbeddings={removedEmbeddingsData}
-            clusterEmbeddings={clusterData}
-            activeTab={activeTab}
-          />
+          <>
+            <SphereScene
+              clusterData={clusterData}
+              unbiasedEmbeddings={embeddingsData}
+              removedEmbeddings={removedEmbeddingsData}
+              clusterEmbeddings={clusterData}
+              activeTab={activeTab}
+            />
+          </>
         ) : (
           <></>
         )}
@@ -465,33 +471,33 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Button container */}
-      <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-20 flex gap-4">
+      {/* Button container - positioned at bottom right corner, moved up slightly */}
+      <div className="fixed bottom-24 right-4 z-20 flex flex-col gap-2">
         <button
           onClick={() => setShowUploadModal(true)}
           disabled={isLoading}
-          className="px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800 transition-all hover:scale-110 disabled:opacity-50"
+          className="px-4 py-2 bg-white text-black border border-gray-300 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50 shadow-md"
         >
           {isLoading ? "Processing..." : "Upload"}
         </button>
         <button
           onClick={handleFilter}
           disabled={isLoading}
-          className="px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800 transition-all hover:scale-110 disabled:opacity-50"
+          className="px-4 py-2 bg-white text-black border border-gray-300 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50 shadow-md"
         >
           {isLoading ? "Processing..." : "Get Unbiased Data"}
         </button>
         <button
           onClick={handleDownload}
           disabled={isLoading}
-          className="px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800 transition-all hover:scale-110 disabled:opacity-50"
+          className="px-4 py-2 bg-white text-black border border-gray-300 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50 shadow-md"
         >
           {isLoading ? "Processing..." : "Download Summary"}
         </button>
         <button
           onClick={handleFetchEmbeddingsInfo}
           disabled={isLoading}
-          className="px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800 transition-all hover:scale-110 disabled:opacity-50"
+          className="px-4 py-2 bg-white text-black border border-gray-300 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50 shadow-md"
         >
           {isLoading ? "Processing..." : "Fetch Embeddings Info"}
         </button>
@@ -597,7 +603,7 @@ export default function Home() {
                     : "Drop CSV file here or click to browse"}
                 </p>
                 <p className="text-xs text-gray-500">
-                  Supports CSV files with Resume_str column
+                  Supports CSV files
                 </p>
               </div>
 
@@ -626,15 +632,15 @@ export default function Home() {
                     <input
                       id="cluster-count"
                       type="range"
-                      min="2"
-                      max="20"
+                      min="1"
+                      max="10"
                       value={clusterCount}
                       onChange={handleClusterCountChange}
                       className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
                     />
                     <div className="flex justify-between text-[10px] text-gray-500">
-                      <span>2</span>
-                      <span>20</span>
+                      <span>1</span>
+                      <span>10</span>
                     </div>
                   </div>
 

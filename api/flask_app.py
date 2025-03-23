@@ -8,6 +8,9 @@ from flask_cors import CORS  # Import CORS
 import uuid
 import shutil
 import numpy as np
+from run_pipeline import run_pipeline
+import threading
+import time
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
@@ -15,6 +18,36 @@ CORS(app)  # Enable CORS for all routes
 # Create uploads directory if it doesn't exist
 UPLOAD_FOLDER = Path("uploads")
 UPLOAD_FOLDER.mkdir(exist_ok=True)
+
+# Global variable to track processing status
+pipeline_status = {
+    "running": False,
+    "last_run": None,
+    "success": None,
+    "message": "",
+    "start_time": None,
+    "end_time": None
+}
+
+def run_pipeline_task():
+    """Run the pipeline in a separate thread and update status"""
+    global pipeline_status
+    
+    pipeline_status["running"] = True
+    pipeline_status["start_time"] = time.time()
+    pipeline_status["message"] = "Pipeline processing started..."
+    
+    try:
+        run_pipeline()
+        pipeline_status["success"] = True
+        pipeline_status["message"] = "Pipeline completed successfully"
+    except Exception as e:
+        pipeline_status["success"] = False
+        pipeline_status["message"] = f"Pipeline failed: {str(e)}"
+    finally:
+        pipeline_status["running"] = False
+        pipeline_status["end_time"] = time.time()
+        pipeline_status["last_run"] = time.strftime("%Y-%m-%d %H:%M:%S")
 
 @app.route('/')
 def index():
@@ -342,6 +375,11 @@ def upload_file():
         return jsonify({"error": "No file part in the request"}), 400
         
     file = request.files['file']
+    cluster_count = request.form.get('cluster_count', default=5, type=int)
+    aggressiveness = request.form.get('aggressiveness', default=50, type=int)
+    # Convert from 0-100 scale to inverse 30-0.2 scale
+    # Higher UI values = lower algorithm values = more aggressive clustering
+    aggressiveness = 3 - (aggressiveness / 100) * 2.98
     
     if file.filename == '':
         return jsonify({"error": "No file selected"}), 400
@@ -371,7 +409,12 @@ def upload_file():
         # Run the pipeline asynchronously
         # This will be a non-blocking call
         subprocess.Popen(
-            ["python", "./main.py", "--input", str(file_path), "--job_id", upload_id],
+            ["python", "./main.py", 
+             "--input", str(file_path), 
+             "--job_id", upload_id,
+             "--bias_weight", str(aggressiveness),
+             "--cluster_count", str(cluster_count)
+            ],
             # Redirect output to a log file
             stdout=open(upload_dir / "pipeline.log", "w"),
             stderr=subprocess.STDOUT
@@ -426,6 +469,48 @@ def get_job_status(job_id):
             "status": "processing",
             "log": log_content
         })
+
+@app.route('/api/run-pipeline', methods=['POST'])
+def start_pipeline():
+    """Start the data processing pipeline"""
+    global pipeline_status
+    
+    # Check if pipeline is already running
+    if pipeline_status["running"]:
+        return jsonify({
+            "success": False,
+            "message": "Pipeline is already running",
+            "status": pipeline_status
+        }), 409
+    
+    # Start pipeline processing in a separate thread
+    thread = threading.Thread(target=run_pipeline_task)
+    thread.daemon = True
+    thread.start()
+    
+    return jsonify({
+        "success": True,
+        "message": "Pipeline processing started",
+        "status": pipeline_status
+    })
+
+@app.route('/api/pipeline-status', methods=['GET'])
+def get_pipeline_status():
+    """Get the current status of the pipeline processing"""
+    global pipeline_status
+    
+    # Calculate duration if applicable
+    if pipeline_status["start_time"] and pipeline_status["end_time"]:
+        duration = pipeline_status["end_time"] - pipeline_status["start_time"]
+        pipeline_status["duration"] = f"{duration:.1f} seconds"
+    elif pipeline_status["start_time"] and pipeline_status["running"]:
+        duration = time.time() - pipeline_status["start_time"]
+        pipeline_status["duration"] = f"{duration:.1f} seconds (running)"
+    
+    return jsonify({
+        "success": True,
+        "status": pipeline_status
+    })
 
 if __name__ == '__main__':
     # Run the Flask app

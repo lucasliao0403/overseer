@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "fdsfff",
-  description: "fdsafdsfsa",
+  title: "Overseer",
+  description: "Pruning Majority Overseer",
 };
 
 export default function RootLayout({
