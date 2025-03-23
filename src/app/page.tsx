@@ -175,7 +175,6 @@ export default function Home() {
 
             setIsLoading(false);
           } else if (status.status === "failed") {
-            setUploadStatus('error');
             setIsLoading(false);
           }
         } catch (error) {

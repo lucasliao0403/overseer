@@ -90,11 +90,11 @@ def main():
     
     # Clean up previous run directories
     for directory in ['clusters', 'unbiased_dataset', 'cluster_analysis']:
-        directory_path = os.path.join('api', directory)
-        if os.path.exists(directory_path):
+        if os.path.exists(directory):
             logging.info(f"Cleaning up previous {directory} directory")
-            shutil.rmtree(directory_path)
-            os.makedirs(directory_path, exist_ok=True)
+            shutil.rmtree(directory)
+            os.makedirs(directory, exist_ok=True)
+            
     # Setup logging
     log_file = setup_logging(args.job_id)
     
