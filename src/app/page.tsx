@@ -391,26 +391,34 @@ export default function Home() {
 
       {/* Navigation Tabs */}
       <div className="fixed top-8 left-1/2 transform -translate-x-1/2 z-20">
-        <div className="bg-white/90 rounded-full shadow-lg p-1 flex">
+        <div className="bg-white/90 rounded-full shadow-lg p-1 flex relative">
+          {/* Animated background that moves based on active tab */}
+          <div
+            className={`absolute top-1 bottom-1 rounded-full bg-black transition-all duration-300 ease-in-out ${
+              activeTab === "clusters"
+                ? "left-1 right-[calc(50%+1px)]"
+                : "left-[calc(50%+1px)] right-1"
+            }`}
+          />
           <button
             onClick={() => setActiveTab("clusters")}
-            className={`px-8 py-3 rounded-full text-lg font-medium transition-all ${
+            className={`px-8 py-3 rounded-full text-lg font-medium transition-all relative z-10 ${
               activeTab === "clusters"
-                ? "bg-black text-white"
-                : "bg-transparent text-gray-700 hover:bg-gray-100"
+                ? "text-white"
+                : "text-gray-700 hover:text-gray-900"
             }`}
           >
             Clusters
           </button>
           <button
             onClick={() => setActiveTab("bias")}
-            className={`px-8 py-3 rounded-full text-lg font-medium transition-all ${
+            className={`px-8 py-3 rounded-full text-lg font-medium transition-all relative z-10 ${
               activeTab === "bias"
-                ? "bg-black text-white"
-                : "bg-transparent text-gray-700 hover:bg-gray-100"
+                ? "text-white"
+                : "text-gray-700 hover:text-gray-900"
             }`}
           >
-            Bias Analysis
+            Analysis
           </button>
         </div>
       </div>

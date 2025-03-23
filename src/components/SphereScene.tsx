@@ -19,6 +19,10 @@ const clusterColors = [
   new THREE.Color(0x34a853), // Green
   new THREE.Color(0x8f00ff), // Purple
   new THREE.Color(0xff6d01), // Orange
+  new THREE.Color(0x00ffff), // Cyan
+  new THREE.Color(0xff00ff), // Magenta
+  new THREE.Color(0xc71585), // Medium Violet Red
+  new THREE.Color(0x20b2aa), // Light Sea Green
 ];
 
 // Define interface for embeddings data
@@ -394,217 +398,161 @@ export default function SphereScene({
     // Debug: Log what we received
     console.log("ClusterEmbeddings received:", clusterEmbeddings);
 
-    // Handle potentially different formats
-    let embeddings: any[] = [];
-
-    // Check if it's in our expected format or needs conversion
-    if (Array.isArray(clusterEmbeddings)) {
-      console.log("ClusterEmbeddings is an array");
-      embeddings = clusterEmbeddings;
-    } else if (
-      clusterEmbeddings.embeddings &&
-      Array.isArray(clusterEmbeddings.embeddings)
-    ) {
-      console.log("Using embeddings property from clusterEmbeddings");
-      embeddings = clusterEmbeddings.embeddings;
-    } else if (clusterEmbeddings.clusters) {
-      // Handle clusters info format
-      console.log("Converting clusters object to embeddings array");
-
-      const clusters = clusterEmbeddings.clusters;
-      // Flatten all clusters into a single array
-      embeddings = Object.entries(clusters).flatMap(
-        ([clusterId, clusterInfo]: [string, any]) => {
-          if (clusterInfo.embeddings && Array.isArray(clusterInfo.embeddings)) {
-            return clusterInfo.embeddings.map((emb: any) => ({
-              id: emb.id || Math.random(),
-              resume_id: emb.resume_id || 0,
-              cluster_id: parseInt(clusterId, 10),
-              embedding: emb.embedding || emb,
-            }));
-          }
-          return [];
-        }
-      );
-    }
-
-    console.log(`Processing ${embeddings.length} cluster embeddings`);
-
-    if (embeddings.length === 0) {
-      console.warn("No embeddings found to visualize");
+    // Instead of flattening, keep clusters separate
+    if (!clusterEmbeddings.clusters) {
+      console.warn("No clusters found in clusterEmbeddings data");
       return;
     }
 
-    // Create a group for clusters
-    const clusterGroup = new THREE.Group();
-    const lineGroup = new THREE.Group();
+    const clusters = clusterEmbeddings.clusters;
+    console.log(`Processing ${Object.keys(clusters).length} separate clusters`);
+
+    // Create a parent group for all clusters
+    const allClustersGroup = new THREE.Group();
+    const allLinesGroup = new THREE.Group();
     const SCALE = 2.5;
 
-    // Keep track of created nodes for debugging
-    const createdNodes: THREE.Mesh[] = [];
+    // Create a fixed color map based on cluster IDs
+    const clusterIds = Object.keys(clusters).map((id) => parseInt(id, 10));
+    console.log(`Found ${clusterIds.length} cluster IDs:`, clusterIds);
 
-    // Create nodes for each embedding
-    embeddings.forEach((item, index) => {
-      // Handle different possible formats
-      const id = item.id || index;
-      const cluster_id = item.cluster_id || 0;
-      const embedding = item.embedding || item;
-
-      // Only continue if we have enough dimensions
-      if (!Array.isArray(embedding) || embedding.length < 3) {
-        console.warn(
-          `Skipping embedding at index ${index}, invalid format:`,
-          embedding
+    // Process each cluster separately
+    Object.entries(clusters).forEach(
+      ([clusterIdStr, clusterInfo]: [string, any], clusterIndex) => {
+        const clusterId = parseInt(clusterIdStr, 10);
+        const clusterColor = clusterColors[clusterIndex % clusterColors.length];
+        console.log(
+          `Processing cluster ${clusterId} with color #${clusterColor.getHexString()}`
         );
-        return;
-      }
 
-      // Create a sphere for this node
-      const geometry = new THREE.SphereGeometry(0.05, 16, 16); // Smaller size to match other points
+        if (!clusterInfo.embeddings || !Array.isArray(clusterInfo.embeddings)) {
+          console.warn(`No embeddings found for cluster ${clusterId}`);
+          return;
+        }
 
-      // Use cluster_id to determine color from clusterColors array
-      const colorIndex = cluster_id % clusterColors.length;
-      const color = clusterColors[colorIndex];
+        console.log(
+          `Cluster ${clusterId} has ${clusterInfo.embeddings.length} embeddings`
+        );
 
-      const material = new THREE.MeshBasicMaterial({
-        color: color,
-        opacity: 0.9,
-        transparent: true,
-      });
+        // Create a group for this specific cluster
+        const clusterGroup = new THREE.Group();
+        const clusterLineGroup = new THREE.Group();
 
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.set(
-        embedding[0] * SCALE,
-        embedding[1] * SCALE,
-        embedding[2] * SCALE
-      );
+        // Keep track of nodes in this cluster for connections
+        const clusterNodes: THREE.Mesh[] = [];
 
-      // Add custom properties for hover/selection
-      mesh.userData = { id, cluster_id, resume_id: item.resume_id || 0 };
+        // Create spheres for this cluster
+        clusterInfo.embeddings.forEach((emb: any, nodeIndex: number) => {
+          const embedding = emb.embedding || emb;
 
-      clusterGroup.add(mesh);
-      createdNodes.push(mesh);
+          // Only continue if we have enough dimensions
+          if (!Array.isArray(embedding) || embedding.length < 3) {
+            return;
+          }
 
-      // Log every 10th node for debugging
-      if (index % 10 === 0) {
-        console.log(`Created node ${index} at position:`, mesh.position);
-      }
-    });
-
-    console.log(
-      `Created ${createdNodes.length} nodes from ${embeddings.length} embeddings`
-    );
-
-    // Add connections between nodes in the same cluster with more connections
-    const nodes = clusterGroup.children as THREE.Mesh[];
-
-    // Group nodes by cluster_id
-    const clusterMap = new Map<number, THREE.Mesh[]>();
-    nodes.forEach((node) => {
-      const clusterId = node.userData.cluster_id;
-      if (!clusterMap.has(clusterId)) {
-        clusterMap.set(clusterId, []);
-      }
-      clusterMap.get(clusterId)?.push(node);
-    });
-
-    console.log(`Grouped nodes into ${clusterMap.size} clusters`);
-
-    // Create a mapping of cluster IDs to unique colors
-    const uniqueClusterIds = Array.from(clusterMap.keys());
-    const clusterColorMap = new Map<number, THREE.Color>();
-    uniqueClusterIds.forEach((clusterId, index) => {
-      // Assign each cluster a unique color from our palette
-      clusterColorMap.set(
-        clusterId,
-        clusterColors[index % clusterColors.length]
-      );
-      console.log(
-        `Assigned cluster ${clusterId} color index ${
-          index % clusterColors.length
-        }`
-      );
-    });
-
-    // Log cluster sizes
-    clusterMap.forEach((nodes, clusterId) => {
-      console.log(`Cluster ${clusterId} has ${nodes.length} nodes`);
-    });
-
-    // Create lines between nodes in same cluster
-    let lineCount = 0;
-    clusterMap.forEach((clusterNodes, clusterId) => {
-      // Only connect each node to its 2-3 nearest neighbors
-      const MAX_CONNECTIONS_PER_NODE = 3;
-
-      // For each node, find its closest neighbors
-      clusterNodes.forEach((sourceNode, i) => {
-        // Calculate distances to all other nodes in this cluster
-        const distances = clusterNodes
-          .map((targetNode, j) => {
-            if (i === j) return { index: j, distance: Infinity }; // Skip self
-
-            // Calculate Euclidean distance between nodes
-            const dx = sourceNode.position.x - targetNode.position.x;
-            const dy = sourceNode.position.y - targetNode.position.y;
-            const dz = sourceNode.position.z - targetNode.position.z;
-            const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-
-            return { index: j, distance };
-          })
-          // Sort by distance (ascending)
-          .sort((a, b) => a.distance - b.distance)
-          // Take only the closest few
-          .slice(0, MAX_CONNECTIONS_PER_NODE);
-
-        // Create lines to the closest neighbors
-        distances.forEach(({ index: j, distance }) => {
-          // Skip if distance is too large
-          if (distance > 2) return;
-
-          const points = [
-            sourceNode.position.clone(),
-            clusterNodes[j].position.clone(),
-          ];
-
-          const geometry = new THREE.BufferGeometry().setFromPoints(points);
-          const material = new THREE.LineBasicMaterial({
-            color: clusterColorMap.get(clusterId) || clusterColors[0],
+          // Create a sphere for this node
+          const geometry = new THREE.SphereGeometry(0.05, 16, 16);
+          const material = new THREE.MeshBasicMaterial({
+            color: clusterColor,
+            opacity: 0.9,
             transparent: true,
-            opacity: 0.8,
-            linewidth: 3,
           });
 
-          const line = new THREE.Line(geometry, material);
-          lineGroup.add(line);
-          lineCount++;
+          const mesh = new THREE.Mesh(geometry, material);
+          mesh.position.set(
+            embedding[0] * SCALE,
+            embedding[1] * SCALE,
+            embedding[2] * SCALE
+          );
+
+          // Add custom properties for hover/selection
+          mesh.userData = {
+            id: emb.id || nodeIndex,
+            cluster_id: clusterId,
+            resume_id: emb.resume_id || 0,
+          };
+
+          clusterGroup.add(mesh);
+          clusterNodes.push(mesh);
         });
-      });
-    });
 
-    console.log(`Created ${lineCount} connection lines between nodes`);
+        // Create connections between nodes in this cluster
+        const MAX_CONNECTIONS_PER_NODE = 3;
 
-    // Add both groups to the scene
-    sceneRef.current.add(clusterGroup);
-    sceneRef.current.add(lineGroup);
+        // For each node, connect to its closest neighbors within the same cluster
+        clusterNodes.forEach((sourceNode, i) => {
+          // Calculate distances to all other nodes in this cluster
+          const distances = clusterNodes
+            .map((targetNode, j) => {
+              if (i === j) return { index: j, distance: Infinity }; // Skip self
 
-    console.log("Added cluster visualization to scene");
+              // Calculate Euclidean distance between nodes
+              const dx = sourceNode.position.x - targetNode.position.x;
+              const dy = sourceNode.position.y - targetNode.position.y;
+              const dz = sourceNode.position.z - targetNode.position.z;
+              const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+              return { index: j, distance };
+            })
+            // Sort by distance (ascending)
+            .sort((a, b) => a.distance - b.distance)
+            // Take only the closest few
+            .slice(0, MAX_CONNECTIONS_PER_NODE);
+
+          // Create lines to the closest neighbors
+          distances.forEach(({ index: j, distance }) => {
+            // Skip if distance is too large
+            if (distance > 2) return;
+
+            const points = [
+              sourceNode.position.clone(),
+              clusterNodes[j].position.clone(),
+            ];
+
+            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+            const material = new THREE.LineBasicMaterial({
+              color: clusterColor,
+              transparent: true,
+              opacity: 0.8,
+              linewidth: 3,
+            });
+
+            const line = new THREE.Line(geometry, material);
+            clusterLineGroup.add(line);
+          });
+        });
+
+        // Add this cluster's groups to the parent groups
+        allClustersGroup.add(clusterGroup);
+        allLinesGroup.add(clusterLineGroup);
+
+        console.log(
+          `Finished processing cluster ${clusterId} with ${clusterNodes.length} nodes`
+        );
+      }
+    );
+
+    // Add both parent groups to the scene
+    sceneRef.current.add(allClustersGroup);
+    sceneRef.current.add(allLinesGroup);
+
+    console.log("Added all cluster visualizations to scene");
 
     // Cleanup function
     return () => {
       console.log("Cleaning up cluster visualization");
-      sceneRef.current?.remove(clusterGroup);
-      sceneRef.current?.remove(lineGroup);
+      sceneRef.current?.remove(allClustersGroup);
+      sceneRef.current?.remove(allLinesGroup);
 
       // Dispose of all geometries and materials
-      clusterGroup.traverse((obj) => {
+      allClustersGroup.traverse((obj) => {
         if (obj instanceof THREE.Mesh) {
           obj.geometry.dispose();
           if (obj.material instanceof THREE.Material) obj.material.dispose();
         }
       });
 
-      lineGroup.traverse((obj) => {
+      allLinesGroup.traverse((obj) => {
         if (obj instanceof THREE.Line) {
           obj.geometry.dispose();
           if (obj.material instanceof THREE.Material) obj.material.dispose();
