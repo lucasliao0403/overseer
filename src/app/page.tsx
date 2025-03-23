@@ -175,8 +175,8 @@ export default function Home() {
 
             setIsLoading(false);
           } else if (status.status === "failed") {
+            setUploadStatus('error');
             setIsLoading(false);
-            alert("Processing failed. Please check the logs.");
           }
         } catch (error) {
           console.error("Error checking job status:", error);
