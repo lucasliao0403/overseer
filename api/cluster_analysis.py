@@ -51,11 +51,9 @@ def analyze_cluster(cluster_df, cluster_num):
     Based on only these samples, please analyze and identify:
     1. Common skills, experiences, or qualifications in this cluster
     2. The likely job roles or industries these resumes target
-    3. Educational backgrounds or patterns
     4. Any other notable patterns or similarities
-    5. A suggested name/label for this cluster based on the common characteristics
     
-    Format your response as a structured analysis with clear sections and bullet points.
+    Format your response as a concise, direct, three paragraph summary of the cluster.
     """
     
     # Make the API call to Cohere with error handling

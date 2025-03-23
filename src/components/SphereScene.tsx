@@ -60,13 +60,23 @@ interface EmbeddingsData {
 interface SphereSceneProps {
   unbiasedEmbeddings?: EmbeddingsData | null;
   removedEmbeddings?: EmbeddingsData | null;
-  activeTab?: string;
+  activeTab?: string | null; // Define allowed literal values
+  clusterData?: any;
+}
+
+// Add this before your SphereScene component, outside any function
+declare global {
+  interface Window {
+    apiDataPoints?: DataPoint[];
+    recenterCamera?: () => void;
+  }
 }
 
 export default function SphereScene({
   unbiasedEmbeddings,
   removedEmbeddings,
   activeTab = "clusters",
+  clusterData,
 }: SphereSceneProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const isDraggingRef = useRef(false);
@@ -92,16 +102,36 @@ export default function SphereScene({
   const lastTimeRef = useRef(0);
   const momentumActiveRef = useRef(false);
 
-  // Create scene and other 3D elements only if showing clusters tab
+  // Example: track data from embeddings if needed
+  const [apiDataPoints, setApiDataPoints] = useState<any[]>([]);
+
+  // Function to handle recenter button click - moved outside useEffect
+  const handleRecenter = () => {
+    if (window.recenterCamera) {
+      window.recenterCamera();
+    }
+  };
+
+  // Function to get cluster name - moved outside useEffect
+  const getClusterName = (clusterId: number | undefined) => {
+    if (clusterId === undefined) return "Unknown";
+    const clusterNames = [
+      "Blue Group",
+      "Red Group",
+      "Yellow Group",
+      "Green Group",
+    ];
+    return clusterNames[clusterId % clusterNames.length];
+  };
+
+  // 1. First effect: basic scene setup (if clusters tab)
   useEffect(() => {
     if (activeTab !== "clusters" || !canvasRef.current) return;
 
-    // Scene setup
     const scene = new THREE.Scene();
-    sceneRef.current = scene;
     scene.background = new THREE.Color(0xf8f9fa);
+    sceneRef.current = scene;
 
-    // Camera setup
     const camera = new THREE.PerspectiveCamera(
       60,
       window.innerWidth / window.innerHeight,
@@ -111,7 +141,6 @@ export default function SphereScene({
     camera.position.z = cameraPositionRef.current.z;
     cameraRef.current = camera;
 
-    // Renderer setup
     const renderer = new THREE.WebGLRenderer({
       canvas: canvasRef.current,
       antialias: true,
@@ -119,6 +148,10 @@ export default function SphereScene({
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
     rendererRef.current = renderer;
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controlsRef.current = controls;
 
     // Create a group to hold all spheres
     const sphereGroup = new THREE.Group();
@@ -214,53 +247,6 @@ export default function SphereScene({
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
 
-    // Function to convert HSB to RGB color
-    const hsbToRgb = (h: number, s: number, b: number): THREE.Vector3 => {
-      // Convert HSB to RGB first
-      h = h % 360;
-      s = s / 100;
-      b = b / 100;
-
-      let c = b * s;
-      let x = c * (1 - Math.abs(((h / 60) % 2) - 1));
-      let m = b - c;
-      let r = 0,
-        g = 0,
-        b1 = 0;
-
-      if (h >= 0 && h < 60) {
-        r = c;
-        g = x;
-        b1 = 0;
-      } else if (h >= 60 && h < 120) {
-        r = x;
-        g = c;
-        b1 = 0;
-      } else if (h >= 120 && h < 180) {
-        r = 0;
-        g = c;
-        b1 = x;
-      } else if (h >= 180 && h < 240) {
-        r = 0;
-        g = x;
-        b1 = c;
-      } else if (h >= 240 && h < 300) {
-        r = x;
-        g = 0;
-        b1 = c;
-      } else {
-        r = c;
-        g = 0;
-        b1 = x;
-      }
-
-      r = r + m;
-      g = g + m;
-      b1 = b1 + m;
-
-      return new THREE.Vector3(r, g, b1);
-    };
-
     // Store vector data with each sphere
     const spheresWithData: {
       sphere: THREE.Mesh;
@@ -269,1015 +255,144 @@ export default function SphereScene({
       position: THREE.Vector3;
     }[] = [];
 
-    // Create spheres based on data points
-    dataPoints.forEach((dataPoint: DataPoint, index) => {
-      // Determine sphere size based on data
-      const baseSize = 0.2;
-      const sizeMultiplier = dataPoint.size || 1.0;
-      const finalSize = baseSize * sizeMultiplier;
-
-      const geometry = new THREE.SphereGeometry(finalSize, 32, 32);
-
-      // Use cluster color or HSB color
-      const clusterColor =
-        clusterColors[dataPoint.cluster || 0 % clusterColors.length];
-      const rgbColor =
-        dataPoint.cluster !== undefined
-          ? new THREE.Vector3(clusterColor.r, clusterColor.g, clusterColor.b)
-          : hsbToRgb(dataPoint[3], dataPoint[4], dataPoint[5]);
-
-      // Create shader material with uniforms
-      const material = new THREE.ShaderMaterial({
-        vertexShader,
-        fragmentShader,
-        uniforms: {
-          baseColor: { value: rgbColor },
-          time: { value: 0.0 },
-          isHovered: { value: false },
-          isActiveCluster: { value: false },
-          confidence: { value: dataPoint.confidence || 0.5 },
-          pulseIntensity: { value: 0.0 },
-        },
-      });
-
-      const sphere = new THREE.Mesh(geometry, material);
-
-      // Position the sphere
-      const position = new THREE.Vector3(
-        dataPoint[0] * 2.5,
-        dataPoint[1] * 2.5,
-        dataPoint[2] * 2.5
-      );
-      sphere.position.copy(position);
-
-      sphereGroup.add(sphere);
-      spheresWithData.push({
-        sphere,
-        dataPoint,
-        material,
-        position,
-      });
-    });
-
-    // Function to handle cluster selection from the panel
-    const handleClusterSelect = (clusterId: number) => {
-      // Toggle cluster selection
-      setActiveCluster(activeCluster === clusterId ? null : clusterId);
-    };
-
-    // Update spheres based on active cluster
-    const updateSpheresForActiveCluster = () => {
-      spheresWithData.forEach(({ material, dataPoint }) => {
-        // A sphere is active if it belongs to the active cluster
-        const isActive =
-          activeCluster !== null && dataPoint.cluster === activeCluster;
-        material.uniforms.isActiveCluster.value = isActive;
-
-        // Add pulsing effect to spheres in the active cluster
-        if (isActive) {
-          material.uniforms.pulseIntensity.value = 1.0;
-        } else {
-          material.uniforms.pulseIntensity.value = 0.0;
-        }
-      });
-
-      // Recreate connection lines based on active cluster
-      createConnectionLines();
-    };
-
-    // Create connection lines between related data points
-    const createConnectionLines = () => {
-      // Remove existing lines
-      while (lineGroup.children.length > 0) {
-        const line = lineGroup.children[0];
-        lineGroup.remove(line);
-        if (line instanceof THREE.Line) {
-          (line.geometry as THREE.BufferGeometry).dispose();
-          (line.material as THREE.Material).dispose();
-        }
-      }
-
-      // Create new lines
-      spheresWithData.forEach((sourceData, sourceIndex) => {
-        const connections = sourceData.dataPoint.connections || [];
-
-        connections.forEach((targetIndex) => {
-          if (targetIndex >= spheresWithData.length) return;
-
-          const targetData = spheresWithData[targetIndex];
-
-          // Skip if neither sphere is in active cluster (when one is selected)
-          if (
-            activeCluster !== null &&
-            sourceData.dataPoint.cluster !== activeCluster &&
-            targetData.dataPoint.cluster !== activeCluster
-          ) {
-            return;
-          }
-
-          // Create line geometry
-          const points = [
-            sourceData.position.clone(),
-            targetData.position.clone(),
-          ];
-
-          const geometry = new THREE.BufferGeometry().setFromPoints(points);
-
-          // Calculate similarity strength (mock data - replace with actual similarity)
-          const similarity = Math.random(); // 0-1 value
-
-          // Create line material with opacity based on similarity
-          const material = new THREE.LineBasicMaterial({
-            color: 0x333333, // Even darker color
-            transparent: true,
-            opacity: 0.5 + similarity * 0.4, // Increased base opacity
-            linewidth: 3, // Increased line width
-          });
-
-          const line = new THREE.Line(geometry, material);
-          lineGroup.add(line);
-        });
-      });
-    };
-
-    // Initial creation of connection lines
-    createConnectionLines();
-
-    // Handle window resize
-    const handleResize = () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-    };
-    window.addEventListener("resize", handleResize);
-
-    // Add zoom functionality with infinite zooming
-    const handleWheel = (event: WheelEvent) => {
-      // Only handle wheel events when mouse is over our canvas
-      const canvasElement = canvasRef.current;
-      if (!canvasElement) return;
-
-      const rect = canvasElement.getBoundingClientRect();
-      const isMouseOverCanvas =
-        event.clientX >= rect.left &&
-        event.clientX <= rect.right &&
-        event.clientY >= rect.top &&
-        event.clientY <= rect.bottom;
-
-      if (!isMouseOverCanvas) return;
-
-      // Prevent default scrolling behavior
-      event.preventDefault();
-
-      // Fixed step size for consistent zooming
-      const zoomStep = 0.5;
-
-      // Update camera position
-
-      // Use a percentage-based zoom for smoother infinite zooming
-      const zoomFactor = 0.05; // 5% zoom per step
-
-      // Determine zoom direction
-      const zoomIn = event.deltaY < 0;
-
-      // Update camera position using multiplicative factor for infinite zoom
-      if (zoomIn) {
-        camera.position.z *= 1 - zoomFactor; // Zoom in (get closer)
-      } else {
-        camera.position.z *= 1 + zoomFactor; // Zoom out (get farther)
-      }
-
-      // Apply min/max limits
-      camera.position.z = Math.max(3, Math.min(20, camera.position.z));
-
-      // No min/max limits for infinite zooming
-
-      // Update the ref to keep track of camera position
-      cameraPositionRef.current.z = camera.position.z;
-    };
-
-    // Add wheel event listener
-    window.addEventListener("wheel", handleWheel, { passive: false });
-
-    // Function to handle sphere hover
-    const handleSphereHover = (event: MouseEvent) => {
-      const canvasElement = canvasRef.current;
-      if (!canvasElement) return;
-
-      // Calculate mouse position in normalized device coordinates (-1 to +1)
-      const rect = canvasElement.getBoundingClientRect();
-      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-      // Update the picking ray with the camera and mouse position
-      raycaster.setFromCamera(mouse, camera);
-
-      // Calculate objects intersecting the picking ray
-      const intersects = raycaster.intersectObjects(sphereGroup.children);
-
-      // Reset previously hovered sphere if it exists
-      if (hoveredSphereRef.current) {
-        const prevHoveredData = spheresWithData.find(
-          (item) => item.sphere === hoveredSphereRef.current
-        );
-        if (prevHoveredData) {
-          prevHoveredData.material.uniforms.isHovered.value = false;
-        }
-        hoveredSphereRef.current = null;
-      }
-
-      if (intersects.length > 0) {
-        // Find the hovered sphere in our data array
-        const hoveredSphere = spheresWithData.find(
-          (item) => item.sphere === intersects[0].object
-        );
-
-        if (hoveredSphere) {
-          // If we hover over a different sphere than the selected one, clear the selection
-          if (selectedVector && hoveredSphere.dataPoint !== selectedVector) {
-            setSelectedVector(null);
-
-            if (selectedSphereRef.current) {
-              const prevSelectedData = spheresWithData.find(
-                (item) => item.sphere === selectedSphereRef.current
-              );
-              if (prevSelectedData) {
-                prevSelectedData.material.uniforms.isHovered.value = false;
-              }
-              selectedSphereRef.current = null;
-            }
-          }
-
-          setHoveredVector(hoveredSphere.dataPoint);
-          hoveredSphereRef.current = hoveredSphere.sphere;
-          hoveredSphere.material.uniforms.isHovered.value = true;
-        }
-      } else {
-        // Not hovering over any sphere, clear hover selection
-        // But keep the selected vector if there is one
-        setHoveredVector(null);
-      }
-    };
-
-    // Function to handle sphere click
-    const handleSphereClick = (event: MouseEvent) => {
-      if (didMoveRef.current) return; // Skip if dragging
-
-      const canvasElement = canvasRef.current;
-      if (!canvasElement) return;
-
-      // Calculate mouse position in normalized device coordinates (-1 to +1)
-      const rect = canvasElement.getBoundingClientRect();
-      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-      // Update the picking ray with the camera and mouse position
-      raycaster.setFromCamera(mouse, camera);
-
-      // Calculate objects intersecting the picking ray
-      const intersects = raycaster.intersectObjects(sphereGroup.children);
-
-      // Reset previously selected sphere if it exists
-      if (selectedSphereRef.current) {
-        const prevSelectedData = spheresWithData.find(
-          (item) => item.sphere === selectedSphereRef.current
-        );
-        if (
-          prevSelectedData &&
-          prevSelectedData.sphere !== hoveredSphereRef.current
-        ) {
-          // Only reset the visual effect if it's not currently being hovered
-          prevSelectedData.material.uniforms.isHovered.value = false;
-        }
-      }
-
-      if (intersects.length > 0) {
-        // Find the clicked sphere in our data array
-        const clickedSphere = spheresWithData.find(
-          (item) => item.sphere === intersects[0].object
-        );
-
-        if (clickedSphere) {
-          // Toggle selection - if already selected, deselect it
-          if (selectedVector && selectedVector === clickedSphere.dataPoint) {
-            setSelectedVector(null);
-          } else {
-            // Otherwise select it
-            setSelectedVector(clickedSphere.dataPoint);
-            selectedSphereRef.current = clickedSphere.sphere;
-            clickedSphere.material.uniforms.isHovered.value = true;
-          }
-
-          const clickedCluster = clickedSphere.dataPoint.cluster;
-
-          // Toggle cluster selection
-          if (activeCluster === clickedCluster) {
-            setActiveCluster(null);
-          } else {
-            setActiveCluster(clickedCluster ?? null);
-          }
-
-          // Update all spheres' active cluster state
-          spheresWithData.forEach(({ material, dataPoint }) => {
-            const isActive =
-              activeCluster === null || dataPoint.cluster === activeCluster;
-            material.uniforms.isActiveCluster.value = isActive;
-
-            // Add pulsing effect to spheres in the active cluster
-            if (activeCluster !== null && dataPoint.cluster === activeCluster) {
-              material.uniforms.pulseIntensity.value = 1.0;
-            } else {
-              material.uniforms.pulseIntensity.value = 0.0;
-            }
-          });
-
-          // Recreate connection lines based on active cluster
-          createConnectionLines();
-        }
-      } else {
-        // Clicked on empty space, clear selection
-        setSelectedVector(null);
-      }
-    };
-
-    // Handle background click to deselect
-    const handleBackgroundClick = (event: MouseEvent) => {
-      if (didMoveRef.current) return; // Skip if dragging
-
-      const canvasElement = canvasRef.current;
-      if (!canvasElement) return;
-
-      // Calculate mouse position in normalized device coordinates (-1 to +1)
-      const rect = canvasElement.getBoundingClientRect();
-      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-      // Update the picking ray with the camera and mouse position
-      raycaster.setFromCamera(mouse, camera);
-
-      // Calculate objects intersecting the picking ray
-      const intersects = raycaster.intersectObjects(sphereGroup.children);
-
-      // If we didn't hit any sphere, clear the selection
-      if (intersects.length === 0) {
-        // Reset previously selected sphere if it exists
-        if (selectedSphereRef.current) {
-          const prevSelectedData = spheresWithData.find(
-            (item) => item.sphere === selectedSphereRef.current
-          );
-          if (
-            prevSelectedData &&
-            prevSelectedData.sphere !== hoveredSphereRef.current
-          ) {
-            // Only reset the visual effect if it's not currently being hovered
-            prevSelectedData.material.uniforms.isHovered.value = false;
-          }
-        }
-        setSelectedVector(null);
-        selectedSphereRef.current = null;
-      }
-    };
-
-    // Mouse event handlers
-    const handleMouseDown = (event: MouseEvent) => {
-      isDraggingRef.current = true;
-      didMoveRef.current = false;
-      previousMousePositionRef.current = {
-        x: event.clientX,
-        y: event.clientY,
-      };
-
-      // Stop any ongoing momentum when user starts dragging
-      momentumActiveRef.current = false;
-      velocityRef.current = { x: 0, y: 0 };
-      lastTimeRef.current = performance.now();
-    };
-
-    const handleMouseMove = (event: MouseEvent) => {
-      // Always check for hover, regardless of dragging state
-      handleSphereHover(event);
-
-      if (!isDraggingRef.current) return;
-
-      const currentTime = performance.now();
-      const deltaTime = currentTime - lastTimeRef.current;
-      lastTimeRef.current = currentTime;
-
-      const deltaX = event.clientX - previousMousePositionRef.current.x;
-      const deltaY = event.clientY - previousMousePositionRef.current.y;
-
-      // If the user moved more than a few pixels, count as dragging rather than clicking
-      if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) {
-        didMoveRef.current = true;
-      }
-
-      // Calculate velocity (pixels per millisecond)
-      if (deltaTime > 0) {
-        velocityRef.current.x = deltaX / deltaTime;
-        velocityRef.current.y = deltaY / deltaTime;
-      }
-
-      // Apply rotation
-      rotationRef.current.y += deltaX * 0.006;
-      rotationRef.current.x += deltaY * 0.006;
-
-      previousMousePositionRef.current = {
-        x: event.clientX,
-        y: event.clientY,
-      };
-    };
-
-    const handleMouseUp = (event: MouseEvent) => {
-      if (!didMoveRef.current) {
-        handleSphereClick(event);
-        handleBackgroundClick(event);
-      } else if (didMoveRef.current) {
-        // Start momentum if we were moving
-        const speed = Math.sqrt(
-          velocityRef.current.x * velocityRef.current.x +
-            velocityRef.current.y * velocityRef.current.y
-        );
-
-        // Only apply momentum if speed is above a threshold
-        if (speed > 0.05) {
-          momentumActiveRef.current = true;
-        }
-      }
-
-      isDraggingRef.current = false;
-    };
-
-    // Touch event handlers for mobile
-    const handleTouchStart = (event: TouchEvent) => {
-      if (event.touches.length === 1) {
-        isDraggingRef.current = true;
-        didMoveRef.current = false;
-        previousMousePositionRef.current = {
-          x: event.touches[0].clientX,
-          y: event.touches[0].clientY,
-        };
-
-        // Stop any ongoing momentum when user starts dragging
-        momentumActiveRef.current = false;
-        velocityRef.current = { x: 0, y: 0 };
-        lastTimeRef.current = performance.now();
-      }
-    };
-
-    const handleTouchMove = (event: TouchEvent) => {
-      if (event.touches.length === 1) {
-        // Convert touch to mouse event for hover handling
-        const touch = event.touches[0];
-        const mouseEvent = new MouseEvent("mousemove", {
-          clientX: touch.clientX,
-          clientY: touch.clientY,
-        });
-        handleSphereHover(mouseEvent);
-      }
-
-      if (!isDraggingRef.current || event.touches.length !== 1) return;
-
-      const currentTime = performance.now();
-      const deltaTime = currentTime - lastTimeRef.current;
-      lastTimeRef.current = currentTime;
-
-      const deltaX =
-        event.touches[0].clientX - previousMousePositionRef.current.x;
-      const deltaY =
-        event.touches[0].clientY - previousMousePositionRef.current.y;
-
-      // If the user moved more than a few pixels, count as dragging rather than clicking
-      if (Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5) {
-        didMoveRef.current = true;
-      }
-
-      // Calculate velocity (pixels per millisecond)
-      if (deltaTime > 0) {
-        velocityRef.current.x = deltaX / deltaTime;
-        velocityRef.current.y = deltaY / deltaTime;
-      }
-
-      rotationRef.current.y += deltaX * 0.003;
-      rotationRef.current.x += deltaY * 0.003;
-
-      previousMousePositionRef.current = {
-        x: event.touches[0].clientX,
-        y: event.touches[0].clientY,
-      };
-    };
-
-    const handleTouchEnd = (event: TouchEvent) => {
-      if (
-        isDraggingRef.current &&
-        !didMoveRef.current &&
-        event.changedTouches.length > 0
-      ) {
-        // Convert touch to mouse event for click handling
-        const touch = event.changedTouches[0];
-        const mouseEvent = new MouseEvent("mouseup", {
-          clientX: touch.clientX,
-          clientY: touch.clientY,
-        });
-        handleMouseUp(mouseEvent);
-      } else if (didMoveRef.current) {
-        // Start momentum if we were moving
-        const speed = Math.sqrt(
-          velocityRef.current.x * velocityRef.current.x +
-            velocityRef.current.y * velocityRef.current.y
-        );
-
-        // Only apply momentum if speed is above a threshold
-        if (speed > 0.05) {
-          momentumActiveRef.current = true;
-        }
-      }
-
-      isDraggingRef.current = false;
-    };
-
-    // Add event listeners
-    window.addEventListener("mousedown", handleMouseDown);
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
-    window.addEventListener("touchstart", handleTouchStart);
-    window.addEventListener("touchmove", handleTouchMove);
-    window.addEventListener("touchend", handleTouchEnd);
-
-    // Watch for changes to activeCluster
-    updateSpheresForActiveCluster();
-
-    // Expose a function to reset camera and rotation
-    window.recenterCamera = () => {
-      // Store starting values for animation
-      const startRotX = rotationRef.current.x;
-      const startRotY = rotationRef.current.y;
-      const startZ = camera.position.z;
-
-      // Target values
-      const targetRotX = 0;
-      const targetRotY = 0;
-      const targetZ = 12; // Default camera position
-
-      const duration = 1000; // Animation duration in ms
-      const startTime = performance.now();
-
-      const animateReset = (currentTime: number) => {
-        const elapsed = currentTime - startTime;
-        const progress = Math.min(elapsed / duration, 1);
-
-        // Use easeOutCubic for smooth animation
-        const easeProgress = 1 - Math.pow(1 - progress, 3);
-
-        // Interpolate rotation
-        rotationRef.current.x =
-          startRotX + (targetRotX - startRotX) * easeProgress;
-        rotationRef.current.y =
-          startRotY + (targetRotY - startRotY) * easeProgress;
-
-        // Interpolate camera position
-        camera.position.z = startZ + (targetZ - startZ) * easeProgress;
-        cameraPositionRef.current.z = camera.position.z;
-
-        if (progress < 1) {
-          requestAnimationFrame(animateReset);
-        }
-      };
-
-      requestAnimationFrame(animateReset);
-
-      // Reset active cluster
-      setActiveCluster(null);
-
-      // Update all spheres' active cluster state
-      spheresWithData.forEach(({ material }) => {
-        material.uniforms.isActiveCluster.value = false;
-        material.uniforms.pulseIntensity.value = 0.0;
-      });
-
-      // Recreate connection lines
-      createConnectionLines();
-    };
-
-    // Add proper OrbitControls setup
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.05;
-    controls.screenSpacePanning = false;
-    controls.minDistance = 1;
-    controls.maxDistance = 50;
-    controlsRef.current = controls;
-
-    // Setup animation loop here instead of in a separate useEffect
+    // Render loop
     const animate = () => {
       requestAnimationFrame(animate);
-
-      controls.update(); // Update controls in the animation loop
-
-      // Update time uniform for all shader materials
-      const elapsedTime = clock.getElapsedTime();
-      spheresWithData.forEach(({ material }) => {
-        material.uniforms.time.value = elapsedTime;
-      });
-
-      // Apply momentum if active
-      if (momentumActiveRef.current) {
-        // Apply velocity with decay
-        rotationRef.current.y += velocityRef.current.x * 0.006 * 16; // Scale to match mouse movement
-        rotationRef.current.x += velocityRef.current.y * 0.006 * 16;
-
-        // Apply decay factor
-        const decayFactor = 0.95;
-        velocityRef.current.x *= decayFactor;
-        velocityRef.current.y *= decayFactor;
-
-        // Stop momentum when velocity gets very small
-        if (
-          Math.abs(velocityRef.current.x) < 0.001 &&
-          Math.abs(velocityRef.current.y) < 0.001
-        ) {
-          momentumActiveRef.current = false;
-          velocityRef.current = { x: 0, y: 0 };
-        }
-      }
-
-      // Apply rotation to the sphere group
-      sphereGroup.rotation.x = rotationRef.current.x;
-      sphereGroup.rotation.y = rotationRef.current.y;
-
+      controls.update();
       renderer.render(scene, camera);
     };
-
     animate();
 
-    // Cleanup function
+    // Cleanup
     return () => {
-      // Reset hovered state
-      if (hoveredSphereRef.current) {
-        const hoveredData = spheresWithData.find(
-          (item) => item.sphere === hoveredSphereRef.current
-        );
-        if (hoveredData) {
-          hoveredData.material.uniforms.isHovered.value = false;
-        }
-      }
-
-      window.removeEventListener("resize", handleResize);
-      window.removeEventListener("mousedown", handleMouseDown);
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-      window.removeEventListener("touchstart", handleTouchStart);
-      window.removeEventListener("touchmove", handleTouchMove);
-      window.removeEventListener("touchend", handleTouchEnd);
-      window.removeEventListener("wheel", handleWheel);
-
-      // Dispose of all resources
-      sphereGroup.children.forEach((child) => {
-        if (child instanceof THREE.Mesh) {
-          child.geometry.dispose();
-          (child.material as THREE.Material).dispose();
-        }
-      });
-      scene.remove(sphereGroup);
       renderer.dispose();
-
-      // Remove the global recenter function
-      delete window.recenterCamera;
-
-      // Clean up resources
-      sceneRef.current = null;
-      controlsRef.current = null;
+      controls.dispose();
     };
-  }, [activeTab, activeCluster]);
+  }, [activeTab]);
 
-  // Function to handle recenter button click
-  const handleRecenter = () => {
-    if (window.recenterCamera) {
-      window.recenterCamera();
-    }
-  };
-
-  // Function to get cluster name
-  const getClusterName = (clusterId: number | undefined) => {
-    if (clusterId === undefined) return "Unknown";
-    const clusterNames = [
-      "Blue Group",
-      "Red Group",
-      "Yellow Group",
-      "Green Group",
-    ];
-    return clusterNames[clusterId % clusterNames.length];
-  };
-
-  // Replace the points creation with spheres (in the unbiasedEmbeddings useEffect)
+  // 2. Second effect: convert unbiasedEmbeddings into data points if clusters tab
   useEffect(() => {
-    if (!sceneRef.current || !unbiasedEmbeddings?.embeddings) return;
+    if (activeTab !== "clusters" || !unbiasedEmbeddings?.embeddings) return;
 
-    // Clear previous spheres
-    if (pointsRef.current) {
-      sceneRef.current.remove(pointsRef.current);
-      // No need to dispose since we'll be creating a new group
+    try {
+      const points = unbiasedEmbeddings.embeddings
+        .map((emb) => {
+          // Make sure there's enough length
+          if (emb.length < 6) return null;
+          // Example: convert to a data point
+          return {
+            x: emb[0],
+            y: emb[1],
+            z: emb[2],
+            r: (emb[3] + 1) / 2,
+            g: (emb[4] + 1) / 2,
+            b: (emb[5] + 1) / 2,
+          };
+        })
+        .filter(Boolean);
+
+      setApiDataPoints(points as any[]);
+    } catch (error) {
+      console.error("Error converting embeddings:", error);
+      setApiDataPoints([]);
     }
+  }, [unbiasedEmbeddings, activeTab]);
 
-    // Create a group to hold all spheres
-    const spheresGroup = new THREE.Group();
-    pointsRef.current = spheresGroup;
+  // 3. Third effect: actually create spheres (or points) from dataPoints if clusters tab
+  useEffect(() => {
+    if (activeTab !== "clusters") return;
+    if (!sceneRef.current) return;
 
-    // Scale factor to fit in scene
-    const SCALE_FACTOR = 2.0;
-    const SPHERE_RADIUS = 0.03;
+    // Clear previous objects if needed
+    // ...
 
-    // Create spheres for each embedding
-    unbiasedEmbeddings.embeddings.forEach((embedding) => {
-      if (embedding.length >= 6) {
-        const sphereGeometry = new THREE.SphereGeometry(SPHERE_RADIUS, 8, 8);
+    // Create new group
+    const group = new THREE.Group();
 
-        // Create material with color from last 3 dimensions
-        const material = new THREE.MeshBasicMaterial({
-          color: new THREE.Color(
-            (embedding[3] + 1) / 2, // Normalize from [-1,1] to [0,1]
-            (embedding[4] + 1) / 2,
-            (embedding[5] + 1) / 2
-          ),
-        });
-
-        const sphere = new THREE.Mesh(sphereGeometry, material);
-
-        // Position from first 3 dimensions
-        sphere.position.set(
-          embedding[0] * SCALE_FACTOR,
-          embedding[1] * SCALE_FACTOR,
-          embedding[2] * SCALE_FACTOR
-        );
-
-        spheresGroup.add(sphere);
-      }
+    // Example scale factor
+    const SCALE = 2.5;
+    // Create spheres
+    apiDataPoints.forEach(({ x, y, z, r, g, b }) => {
+      const geometry = new THREE.SphereGeometry(0.2, 16, 16);
+      const material = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(r, g, b),
+      });
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(x * SCALE, y * SCALE, z * SCALE);
+      group.add(mesh);
     });
 
-    sceneRef.current.add(spheresGroup);
+    sceneRef.current.add(group);
 
-    console.log(
-      `Added ${spheresGroup.children.length} embedding spheres to scene`
-    );
-  }, [unbiasedEmbeddings]);
-
-  // Create points from removed embeddings data
-  useEffect(() => {
-    if (!sceneRef.current || !removedEmbeddings?.embeddings) return;
-
-    // Remove existing spheres if they exist
-    if (removedPointsRef.current) {
-      sceneRef.current.remove(removedPointsRef.current);
-      removedPointsRef.current.traverse((child) => {
-        if (child instanceof THREE.Mesh) {
-          child.geometry.dispose();
-          if (child.material instanceof THREE.Material) {
-            child.material.dispose();
-          }
+    // Cleanup
+    return () => {
+      sceneRef.current?.remove(group);
+      group.traverse((obj) => {
+        if (obj instanceof THREE.Mesh) {
+          obj.geometry.dispose();
+          if (obj.material instanceof THREE.Material) obj.material.dispose();
         }
       });
-    }
+    };
+  }, [apiDataPoints, activeTab]);
 
-    // Create a group to hold all spheres
-    const spheresGroup = new THREE.Group();
-    removedPointsRef.current = spheresGroup;
-
-    // Scale factor to fit in scene
-    const SCALE_FACTOR = 2.0;
-    const SPHERE_RADIUS = 0.04; // Slightly larger than unbiased
-
-    // Create spheres for each embedding
-    removedEmbeddings.embeddings.forEach((embedding) => {
-      if (embedding.length >= 6) {
-        const sphereGeometry = new THREE.SphereGeometry(SPHERE_RADIUS, 8, 8);
-
-        const material = new THREE.MeshBasicMaterial({
-          color: new THREE.Color(
-            (embedding[3] + 1) / 2,
-            (embedding[4] + 1) / 2,
-            (embedding[5] + 1) / 2
-          ),
-          transparent: true,
-          opacity: 0.9,
-        });
-
-        const sphere = new THREE.Mesh(sphereGeometry, material);
-        sphere.position.set(
-          embedding[0] * SCALE_FACTOR,
-          embedding[1] * SCALE_FACTOR,
-          embedding[2] * SCALE_FACTOR
-        );
-
-        spheresGroup.add(sphere);
-      }
-    });
-
-    sceneRef.current.add(spheresGroup);
-
-    console.log(
-      `Added ${spheresGroup.children.length} removed embedding spheres to scene`
-    );
-  }, [removedEmbeddings]);
-
-  // Add this debugging useEffect
+  // 4. Fourth effect: handle removedEmbeddings similarly if needed
   useEffect(() => {
-    console.log("Embedding data received:", {
-      unbiased: unbiasedEmbeddings?.count || 0,
-      removed: removedEmbeddings?.count || 0,
-    });
-  }, [unbiasedEmbeddings, removedEmbeddings]);
+    if (
+      activeTab !== "clusters" ||
+      !removedEmbeddings?.embeddings ||
+      !sceneRef.current
+    )
+      return;
 
-  // If we're on the bias analysis tab, render the bias analysis screen
-  if (activeTab === "bias") {
+    // Example: create a group
+    const removedGroup = new THREE.Group();
+    const SCALE = 2.5;
+
+    removedEmbeddings.embeddings.forEach((emb) => {
+      if (emb.length < 6) return;
+      const geometry = new THREE.SphereGeometry(0.2, 16, 16);
+      const material = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(
+          (emb[3] + 1) / 2,
+          (emb[4] + 1) / 2,
+          (emb[5] + 1) / 2
+        ),
+        opacity: 0.7,
+        transparent: true,
+      });
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(emb[0] * SCALE, emb[1] * SCALE, emb[2] * SCALE);
+      removedGroup.add(mesh);
+    });
+
+    sceneRef.current.add(removedGroup);
+
+    return () => {
+      sceneRef.current?.remove(removedGroup);
+      removedGroup.traverse((obj) => {
+        if (obj instanceof THREE.Mesh) {
+          obj.geometry.dispose();
+          if (obj.material instanceof THREE.Material) obj.material.dispose();
+        }
+      });
+    };
+  }, [removedEmbeddings, activeTab]);
+
+  // Component return: conditionally render if not clusters
+  if (activeTab !== "clusters") {
     return (
       <div className="min-h-screen bg-gray-50 p-6 pt-24">
-        <div className="max-w-6xl mx-auto">
-          <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-            <h2 className="text-xl font-semibold mb-4">
-              Embedding Space Analysis
-            </h2>
-            <p className="text-gray-700 mb-4">
-              This analysis examines the distribution of data points in the
-              embedding space to identify potential biases.
-            </p>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <h3 className="font-medium mb-2">Cluster Distribution</h3>
-                <div className="h-64 bg-gray-200 rounded flex items-center justify-center">
-                  [Placeholder for cluster distribution chart]
-                </div>
-              </div>
-
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <h3 className="font-medium mb-2">Demographic Analysis</h3>
-                <div className="h-64 bg-gray-200 rounded flex items-center justify-center">
-                  [Placeholder for demographic analysis chart]
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl shadow-lg p-6">
-            <h2 className="text-xl font-semibold mb-4">Bias Metrics</h2>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-              <div className="border border-gray-200 rounded-lg p-4">
-                <h3 className="font-medium text-gray-900">Gender Bias Score</h3>
-                <div className="text-3xl font-bold text-blue-600 mt-2">
-                  0.82
-                </div>
-                <p className="text-sm text-gray-500 mt-1">
-                  Lower is better (0-1 scale)
-                </p>
-              </div>
-
-              <div className="border border-gray-200 rounded-lg p-4">
-                <h3 className="font-medium text-gray-900">Age Bias Score</h3>
-                <div className="text-3xl font-bold text-green-600 mt-2">
-                  0.65
-                </div>
-                <p className="text-sm text-gray-500 mt-1">
-                  Lower is better (0-1 scale)
-                </p>
-              </div>
-
-              <div className="border border-gray-200 rounded-lg p-4">
-                <h3 className="font-medium text-gray-900">
-                  Ethnicity Bias Score
-                </h3>
-                <div className="text-3xl font-bold text-orange-600 mt-2">
-                  0.78
-                </div>
-                <p className="text-sm text-gray-500 mt-1">
-                  Lower is better (0-1 scale)
-                </p>
-              </div>
-            </div>
-
-            <div className="bg-blue-50 p-4 rounded-lg">
-              <h3 className="font-medium text-blue-800 mb-2">
-                Recommendations
-              </h3>
-              <ul className="list-disc pl-5 text-blue-700 space-y-1">
-                <li>
-                  Consider rebalancing your dataset to address gender
-                  representation
-                </li>
-                <li>
-                  Review language patterns in job descriptions that may
-                  contribute to bias
-                </li>
-                <li>
-                  Implement additional fairness constraints in your model
-                  training
-                </li>
-              </ul>
-            </div>
-          </div>
-        </div>
+        {/* Put whatever you need for non-clusters tab */}
+        Non-clusters content here...
       </div>
     );
   }
 
-  // Otherwise, render the 3D visualization
+  // Otherwise, show the 3D canvas
   return (
-    <main className="relative min-h-screen">
-      <canvas
-        ref={canvasRef}
-        className="w-full h-full fixed top-0 left-0 -z-10 cursor-grab active:cursor-grabbing"
-      />
-
-      {/* Legend with Recenter button */}
-      <div className="absolute top-4 left-4 bg-white/90 p-4 rounded-lg shadow-lg border border-gray-200">
-        <h3 className="font-semibold mb-2 text-black">Clusters</h3>
-        <div className="space-y-2 mb-4">
-          {[0, 1, 2, 3].map((clusterId) => (
-            <div
-              key={clusterId}
-              className="flex items-center gap-2 cursor-pointer hover:bg-gray-100 p-1 rounded"
-              onClick={() =>
-                setActiveCluster(activeCluster === clusterId ? null : clusterId)
-              }
-            >
-              <div
-                className="w-4 h-4 rounded-full"
-                style={{
-                  backgroundColor: `rgb(${Math.round(
-                    clusterColors[clusterId].r * 255
-                  )}, ${Math.round(
-                    clusterColors[clusterId].g * 255
-                  )}, ${Math.round(clusterColors[clusterId].b * 255)})`,
-                  border:
-                    activeCluster === clusterId ? "2px solid black" : "none",
-                }}
-              />
-              <span className="text-sm text-gray-900">
-                {getClusterName(clusterId)}
-              </span>
-            </div>
-          ))}
-        </div>
-
-        {/* Recenter button moved inside the cluster panel */}
-        <button
-          onClick={handleRecenter}
-          className="w-full bg-gray-100 px-4 py-2 rounded-lg text-gray-900 hover:bg-gray-200 transition-colors text-sm font-medium"
-        >
-          Recenter View
-        </button>
-      </div>
-
-      {/* Show data point information when hovering OR when a point is selected */}
-      {(hoveredVector || selectedVector) && (
-        <div className="absolute top-4 right-4 bg-white/90 p-4 rounded-lg shadow-lg border border-gray-200">
-          <h3 className="font-semibold mb-2 text-black">
-            Data Point Information
-          </h3>
-          {(() => {
-            const vector = hoveredVector || selectedVector;
-            // Add null check to satisfy TypeScript
-            if (!vector) return null;
-
-            return (
-              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-                <div className="text-gray-900">Position X:</div>
-                <div className="text-gray-900">{vector[0]}</div>
-                <div className="text-gray-900">Position Y:</div>
-                <div className="text-gray-900">{vector[1]}</div>
-                <div className="text-gray-900">Position Z:</div>
-                <div className="text-gray-900">{vector[2]}</div>
-                <div className="text-gray-900">Cluster:</div>
-                <div className="text-gray-900">
-                  {getClusterName(vector.cluster)}
-                </div>
-                <div className="text-gray-900">Size Factor:</div>
-                <div className="text-gray-900">{vector.size?.toFixed(2)}</div>
-                <div className="text-gray-900">Confidence:</div>
-                <div className="text-gray-900">
-                  {(vector.confidence || 0).toFixed(2)}
-                </div>
-                <div className="text-gray-900">Connections:</div>
-                <div className="text-gray-900">
-                  {vector.connections?.length || 0}
-                </div>
-              </div>
-            );
-          })()}
-        </div>
-      )}
-
-      {/* Information box in bottom right corner */}
-      <div className="absolute bottom-4 right-4 bg-gray-700/80 text-white p-3 rounded-lg shadow-lg max-w-xs">
-        <p className="text-sm">Click on spheres to view details</p>
-        <p className="text-sm">Drag to rotate | Scroll to zoom</p>
-      </div>
-    </main>
+    <div className="relative w-full h-full">
+      <canvas ref={canvasRef} />
+    </div>
   );
-}
-
-// Add the recenterCamera method to the Window interface
-declare global {
-  interface Window {
-    recenterCamera?: () => void;
-  }
 }
