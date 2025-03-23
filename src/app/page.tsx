@@ -420,15 +420,14 @@ export default function Home() {
       {/* Main content area - always render SphereScene now */}
       <div className="w-full h-screen">
         {activeTab === "clusters" ? (
-          <>
-            <SphereScene
-              clusterData={clusterData}
-              unbiasedEmbeddings={embeddingsData}
-              removedEmbeddings={removedEmbeddingsData}
-              clusterEmbeddings={clusterData}
-              activeTab={activeTab}
-            />
-          </>
+          <SphereScene
+            clusterData={clusterData}
+            unbiasedEmbeddings={embeddingsData}
+            removedEmbeddings={removedEmbeddingsData}
+            clusterEmbeddings={clusterData}
+            activeTab={activeTab}
+            showDefaultObjects={showDefaultObjects}
+          />
         ) : (
           <></>
         )}
