@@ -30,7 +30,7 @@ def generate_embeddings(df, resume_column='Resume_str', model_name="all-MiniLM-L
     
     return resume_embeddings
 
-def find_dense_clusters(embeddings, min_cluster_size=5, min_samples=5, n_clusters=3):
+def find_dense_clusters(embeddings, min_cluster_size=5, min_samples=5, n_clusters=10):
     """Find the N densest clusters using HDBSCAN"""
     print(f"Clustering {embeddings.shape[0]} embeddings...")
     

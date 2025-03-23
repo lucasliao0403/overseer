@@ -74,6 +74,7 @@ interface SphereSceneProps {
   clusterData?: any;
   clusterEmbeddings?: ClusterData | null; // Add with proper typing
   showDefaultObjects?: boolean; // Add this prop
+  clusterCount?: number;
 }
 
 // Add this before your SphereScene component, outside any function
@@ -89,6 +90,7 @@ export default function SphereScene({
   removedEmbeddings,
   activeTab = "clusters",
   clusterEmbeddings,
+  clusterCount,
   showDefaultObjects = true, // Default to showing the objects
 }: SphereSceneProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -912,53 +914,55 @@ export default function SphereScene({
               <h3 className="text-sm font-semibold text-gray-800">Clusters</h3>
             </div>
             <div className="space-y-2.5 flex-grow">
-              {Object.entries(clusterEmbeddings.clusters).map(
-                ([clusterId, clusterInfo]: [string, any], index) => {
-                  const clusterColor =
-                    clusterColors[index % clusterColors.length];
-                  // Use letters instead of cluster IDs
-                  const clusterLetter = String.fromCharCode(65 + index % 26); // A-Z (ASCII 65-90)
-                  return (
-                    <div
-                      key={clusterId}
-                      className="flex items-center space-x-2.5 text-black py-0.5"
-                    >
-                      <div className="flex items-center">
-                        <input
-                          type="checkbox"
-                          id={`cluster-${clusterId}`}
-                          checked={visibleClusters[clusterId] !== false}
-                          onChange={() => toggleClusterVisibility(clusterId)}
-                          className="w-4.5 h-4.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                        />
+              {Object.entries(clusterEmbeddings.clusters)
+                .slice(0, clusterCount) // Only show the first n clusters based on clusterCount
+                .map(
+                  ([clusterId, clusterInfo]: [string, any], index) => {
+                    const clusterColor =
+                      clusterColors[index % clusterColors.length];
+                    // Use letters instead of cluster IDs
+                    const clusterLetter = String.fromCharCode(65 + index % 26); // A-Z (ASCII 65-90)
+                    return (
+                      <div
+                        key={clusterId}
+                        className="flex items-center space-x-2.5 text-black py-0.5"
+                      >
+                        <div className="flex items-center">
+                          <input
+                            type="checkbox"
+                            id={`cluster-${clusterId}`}
+                            checked={visibleClusters[clusterId] !== false}
+                            onChange={() => toggleClusterVisibility(clusterId)}
+                            className="w-4.5 h-4.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                        </div>
+                        <label
+                          htmlFor={`cluster-${clusterId}`}
+                          className="flex-grow flex items-center cursor-pointer text-sm text-black"
+                        >
+                          <span
+                            className="inline-block w-3.5 h-3.5 mr-2 rounded-full"
+                            style={{
+                              backgroundColor: `#${clusterColor.getHexString()}`,
+                            }}
+                          ></span>
+                          Cluster {clusterLetter}
+                          {clusterInfo.size && (
+                            <span className="text-xs text-gray-500 ml-1">
+                              ({clusterInfo.size})
+                            </span>
+                          )}
+                        </label>
+                        <button
+                          onClick={() => selectCluster(clusterId)}
+                          className="ml-auto text-xs text-blue-500 hover:text-blue-700 font-medium"
+                        >
+                          {selectedCluster === clusterId ? "Hide" : "Info"}
+                        </button>
                       </div>
-                      <label
-                        htmlFor={`cluster-${clusterId}`}
-                        className="flex-grow flex items-center cursor-pointer text-sm text-black"
-                      >
-                        <span
-                          className="inline-block w-3.5 h-3.5 mr-2 rounded-full"
-                          style={{
-                            backgroundColor: `#${clusterColor.getHexString()}`,
-                          }}
-                        ></span>
-                        Cluster {clusterLetter}
-                        {clusterInfo.size && (
-                          <span className="text-xs text-gray-500 ml-1">
-                            ({clusterInfo.size})
-                          </span>
-                        )}
-                      </label>
-                      <button
-                        onClick={() => selectCluster(clusterId)}
-                        className="ml-auto text-xs text-blue-500 hover:text-blue-700 font-medium"
-                      >
-                        {selectedCluster === clusterId ? "Hide" : "Info"}
-                      </button>
-                    </div>
-                  );
-                }
-              )}
+                    );
+                  }
+                )}
             </div>
 
             {/* Recenter button - slightly increased size */}

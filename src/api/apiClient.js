@@ -27,10 +27,11 @@ export const getApiStatus = async () => {
  * @param {File} file - The CSV file to upload
  * @returns {Promise<Object>} Upload result with job ID
  */
-export const uploadDataset = async (file) => {
+export const uploadDataset = async (file, clusterCount) => {
   try {
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('cluster_count', clusterCount);
     
     const response = await fetch(getApiUrl('upload'), {
       method: 'POST',
