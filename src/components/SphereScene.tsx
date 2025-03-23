@@ -3,7 +3,6 @@ import * as THREE from "three";
 import { vectors, Vector6D } from "../data/spheres";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { getClusterAnalysis } from "../api/apiClient";
-import ReactMarkdown from "react-markdown";
 
 // Extended interface for our data points
 interface DataPoint extends Vector6D {
@@ -127,6 +126,16 @@ export default function SphereScene({
   }>({});
   const [selectedCluster, setSelectedCluster] = useState<string | null>(null);
 
+  // Add this state to track hovered node
+  const [hoveredNode, setHoveredNode] = useState<{
+    id: number;
+    cluster_id: number;
+    resume_id?: number;
+  } | null>(null);
+
+  // Add these new state variables to track the hover position
+  const [hoverPosition, setHoverPosition] = useState<{x: number, y: number} | null>(null);
+
   // Standalone useEffect for initializing visibility state
   useEffect(() => {
     if (!clusterEmbeddings?.clusters) return;
@@ -230,48 +239,49 @@ export default function SphereScene({
     const fragmentShader = `
       varying vec3 vNormal;
       varying vec3 vPosition;
-      varying vec2 vUv;
       uniform vec3 baseColor;
+      uniform float isHovered;
       uniform float time;
-      uniform bool isHovered;
-      uniform bool isActiveCluster;
-      uniform float confidence;
       
       void main() {
-        // Calculate fresnel effect for edge highlighting
+        // Calculate view direction
         vec3 viewDirection = normalize(cameraPosition - vPosition);
-        float fresnel = pow(1.0 - dot(vNormal, viewDirection), 3.0);
+        float viewAngle = dot(vNormal, viewDirection);
         
-        // Create shimmer effect
+        // Create shiny metallic effect with consistent lighting
+        vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
+        float diffuse = max(0.0, dot(vNormal, lightDir));
+        
+        // Add specular highlight with angle-dependent intensity
+        vec3 halfVector = normalize(lightDir + viewDirection);
+        float specular = pow(max(0.0, dot(vNormal, halfVector)), 30.0);
+        
+        // Scale specular based on viewing angle for more consistent appearance
+        specular *= mix(0.4, 0.8, viewAngle);
+        
+        // Create animated shimmer effect with reduced intensity at grazing angles
         float shimmer = sin(vPosition.x * 20.0 + vPosition.y * 20.0 + vPosition.z * 20.0 + time * 3.0) * 0.5 + 0.5;
-        shimmer = pow(shimmer, 4.0) * 0.15;
+        shimmer = pow(shimmer, 4.0) * 0.3 * viewAngle;
         
-        // Combine base color with effects
-        vec3 color = baseColor;
+        // Combine all lighting effects with increased base illumination (0.5 instead of 0.4)
+        vec3 finalColor = baseColor * (0.5 + diffuse * 0.6);
         
-        // Adjust color based on confidence
-        color = mix(color * 0.7, color, confidence);
+        // Add enhanced specular highlight (0.6 instead of 0.5)
+        finalColor += vec3(1.0, 1.0, 1.0) * specular * 0.6;
         
-        // Add edge highlight
-        color += vec3(1.0, 1.0, 1.0) * fresnel * 0.3;
+        // Add shimmer with slightly increased intensity
+        finalColor += vec3(1.0, 1.0, 1.0) * shimmer * 1.2;
         
-        // Add shimmer
-        color += vec3(1.0, 1.0, 1.0) * shimmer;
-        
-        // Add active cluster highlighting
-        if (isActiveCluster && !isHovered) {
-          float pulse = sin(time * 2.0) * 0.5 + 0.5;
-          color = color * 1.2 + vec3(1.0, 1.0, 1.0) * pulse * 0.1;
-        }
-        
-        // Add glow effect when hovered
-        if (isHovered) {
+        // Add glow effect when hovered with angle-dependent intensity
+        if (isHovered > 0.0) {
           // Increase brightness and add pulsing glow
           float pulse = sin(time * 5.0) * 0.5 + 0.5;
-          color = color * 1.5 + vec3(1.0, 1.0, 1.0) * pulse * 0.3;
+          // Scale brightness increase based on viewing angle
+          float brightnessScale = mix(0.8, 1.3, viewAngle);
+          finalColor = finalColor * brightnessScale + vec3(1.0, 1.0, 1.0) * pulse * 0.3 * viewAngle;
         }
         
-        gl_FragColor = vec4(color, 1.0);
+        gl_FragColor = vec4(finalColor, 1.0);
       }
     `;
 
@@ -416,7 +426,7 @@ export default function SphereScene({
     };
   }, [removedEmbeddings, activeTab]);
 
-  // The cluster visualization effect (now without nested useEffect)
+  // The cluster visualization effect
   useEffect(() => {
     if (activeTab !== "clusters" || !clusterEmbeddings || !sceneRef.current) {
       return;
@@ -437,6 +447,18 @@ export default function SphereScene({
     // Create a fixed color map based on cluster IDs
     const clusterIds = Object.keys(clusters).map((id) => parseInt(id, 10));
     console.log(`Found ${clusterIds.length} cluster IDs:`, clusterIds);
+    
+    // Track hovered and active nodes
+    let hoveredNode: THREE.Mesh | null = null;
+    let selectedNode: THREE.Mesh | null = null;
+    
+    // Raycaster for interaction
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+
+    // Clock for animation timing
+    const clock = new THREE.Clock();
+    clock.start();
 
     // Process each cluster separately
     Object.entries(clusters).forEach(
@@ -478,12 +500,78 @@ export default function SphereScene({
             return;
           }
 
-          // Create a sphere for this node
-          const geometry = new THREE.SphereGeometry(0.05, 16, 16);
-          const material = new THREE.MeshBasicMaterial({
-            color: clusterColor,
-            opacity: 0.9,
-            transparent: true,
+          // Create a sphere for this node - make it slightly larger (0.08 instead of 0.05)
+          const geometry = new THREE.SphereGeometry(0.08, 16, 16);
+          
+          // Create a shader material for better appearance and hover effects
+          const material = new THREE.ShaderMaterial({
+            uniforms: {
+              baseColor: { value: clusterColor },
+              isHovered: { value: 0.0 },
+              time: { value: 0.0 }
+            },
+            vertexShader: `
+              varying vec3 vNormal;
+              varying vec3 vPosition;
+              uniform float isHovered;
+              
+              void main() {
+                vNormal = normalize(normalMatrix * normal);
+                vPosition = position;
+                
+                // Apply a size increase when hovered
+                vec3 newPosition = position * (1.0 + isHovered * 0.3);
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(newPosition, 1.0);
+              }
+            `,
+            fragmentShader: `
+              varying vec3 vNormal;
+              varying vec3 vPosition;
+              uniform vec3 baseColor;
+              uniform float isHovered;
+              uniform float time;
+              
+              void main() {
+                // Calculate view direction
+                vec3 viewDirection = normalize(cameraPosition - vPosition);
+                float viewAngle = dot(vNormal, viewDirection);
+                
+                // Create shiny metallic effect with consistent lighting
+                vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
+                float diffuse = max(0.0, dot(vNormal, lightDir));
+                
+                // Add specular highlight with angle-dependent intensity
+                vec3 halfVector = normalize(lightDir + viewDirection);
+                float specular = pow(max(0.0, dot(vNormal, halfVector)), 30.0);
+                
+                // Scale specular based on viewing angle for more consistent appearance
+                specular *= mix(0.4, 0.8, viewAngle);
+                
+                // Create animated shimmer effect with reduced intensity at grazing angles
+                float shimmer = sin(vPosition.x * 20.0 + vPosition.y * 20.0 + vPosition.z * 20.0 + time * 3.0) * 0.5 + 0.5;
+                shimmer = pow(shimmer, 4.0) * 0.3 * viewAngle;
+                
+                // Combine all lighting effects with increased base illumination (0.5 instead of 0.4)
+                vec3 finalColor = baseColor * (0.5 + diffuse * 0.6);
+                
+                // Add enhanced specular highlight (0.6 instead of 0.5)
+                finalColor += vec3(1.0, 1.0, 1.0) * specular * 0.6;
+                
+                // Add shimmer with slightly increased intensity
+                finalColor += vec3(1.0, 1.0, 1.0) * shimmer * 1.2;
+                
+                // Add glow effect when hovered with angle-dependent intensity
+                if (isHovered > 0.0) {
+                  // Increase brightness and add pulsing glow
+                  float pulse = sin(time * 5.0) * 0.5 + 0.5;
+                  // Scale brightness increase based on viewing angle
+                  float brightnessScale = mix(0.8, 1.3, viewAngle);
+                  finalColor = finalColor * brightnessScale + vec3(1.0, 1.0, 1.0) * pulse * 0.3 * viewAngle;
+                }
+                
+                gl_FragColor = vec4(finalColor, 1.0);
+              }
+            `
           });
 
           const mesh = new THREE.Mesh(geometry, material);
@@ -498,6 +586,7 @@ export default function SphereScene({
             id: emb.id || nodeIndex,
             cluster_id: clusterId,
             resume_id: emb.resume_id || 0,
+            material: material  // Store reference to material for hover effects
           };
 
           clusterGroup.add(mesh);
@@ -553,10 +642,6 @@ export default function SphereScene({
         // Add this cluster's groups to the parent groups
         allClustersGroup.add(clusterGroup);
         allLinesGroup.add(clusterLineGroup);
-
-        console.log(
-          `Finished processing cluster ${clusterId} with ${clusterNodes.length} nodes`
-        );
       }
     );
 
@@ -564,7 +649,142 @@ export default function SphereScene({
     sceneRef.current.add(allClustersGroup);
     sceneRef.current.add(allLinesGroup);
 
-    console.log("Added all cluster visualizations to scene");
+    // Animation loop to update shader uniforms
+    const animate = () => {
+      const elapsedTime = clock.getElapsedTime();
+      
+      // Update all materials
+      allClustersGroup.traverse((object) => {
+        if (object instanceof THREE.Mesh && object.userData.material) {
+          const material = object.userData.material as THREE.ShaderMaterial;
+          if (material.uniforms.time) {
+            material.uniforms.time.value = elapsedTime;
+          }
+        }
+      });
+      
+      requestAnimationFrame(animate);
+    };
+    
+    animate();
+
+    // Add mouse move handler for hover detection
+    const handleMouseMove = (event: MouseEvent) => {
+      // Calculate mouse position in normalized device coordinates
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      
+      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+      
+      // Update the raycaster
+      if (!cameraRef.current) return;
+      raycaster.setFromCamera(mouse, cameraRef.current);
+      
+      // Find intersections with spheres
+      const intersects = raycaster.intersectObjects(allClustersGroup.children, true);
+      
+      // Reset previous hover state
+      if (hoveredNode && hoveredNode.userData.material) {
+        (hoveredNode.userData.material as THREE.ShaderMaterial).uniforms.isHovered.value = 0.0;
+      }
+      
+      if (intersects.length > 0) {
+        // Get the first intersected object
+        const object = intersects[0].object as THREE.Mesh;
+        
+        // Check if it has userData
+        if (object.userData && object.userData.id !== undefined) {
+          // Set the hovered node data for info display
+          setHoveredNode({
+            id: object.userData.id,
+            cluster_id: object.userData.cluster_id,
+            resume_id: object.userData.resume_id
+          });
+          
+          // Calculate the position for the hover panel
+          // Convert 3D position to screen coordinates
+          const vector = new THREE.Vector3();
+          vector.setFromMatrixPosition(object.matrixWorld);
+          vector.project(cameraRef.current);
+          
+          const x = (vector.x * 0.5 + 0.5) * rect.width + rect.left;
+          const y = (-(vector.y * 0.5) + 0.5) * rect.height + rect.top;
+          
+          // Set hover position (offset slightly above and to the right)
+          setHoverPosition({ x: x + 20, y: y - 60 });
+          
+          // Apply hover effect
+          if (object.userData.material) {
+            (object.userData.material as THREE.ShaderMaterial).uniforms.isHovered.value = 1.0;
+            hoveredNode = object;
+          }
+        }
+      } else {
+        // Clear hovered node when not hovering over any sphere
+        setHoveredNode(null);
+        setHoverPosition(null);
+        hoveredNode = null;
+      }
+    };
+    
+    // Add mouse leave handler
+    const handleMouseLeave = () => {
+      setHoveredNode(null);
+      setHoverPosition(null);
+      if (hoveredNode && hoveredNode.userData.material) {
+        (hoveredNode.userData.material as THREE.ShaderMaterial).uniforms.isHovered.value = 0.0;
+      }
+      hoveredNode = null;
+    };
+    
+    // Add event listeners
+    canvasRef.current?.addEventListener('mousemove', handleMouseMove);
+    canvasRef.current?.addEventListener('mouseleave', handleMouseLeave);
+
+    // Add the recenterCamera function to the window object
+    window.recenterCamera = () => {
+      if (!cameraRef.current || !controlsRef.current) return;
+      
+      const camera = cameraRef.current;
+      const controls = controlsRef.current;
+      
+      // 1. Capture current camera position and rotation
+      const startPosition = camera.position.clone();
+      const startTarget = controls.target.clone();
+      
+      // 2. Define target values (centered view)
+      const targetPosition = new THREE.Vector3(0, 0, 6);
+      const targetTarget = new THREE.Vector3(0, 0, 0);
+      const duration = 1000; // 1 second
+      
+      // 3. Set up animation
+      const startTime = performance.now();
+      const animateReset = (currentTime: number) => {
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        const easeProgress = 1 - Math.pow(1 - progress, 3); // easeOutCubic
+        
+        // Interpolate position
+        camera.position.x = startPosition.x + (targetPosition.x - startPosition.x) * easeProgress;
+        camera.position.y = startPosition.y + (targetPosition.y - startPosition.y) * easeProgress;
+        camera.position.z = startPosition.z + (targetPosition.z - startPosition.z) * easeProgress;
+        
+        // Interpolate target (what the camera is looking at)
+        controls.target.x = startTarget.x + (targetTarget.x - startTarget.x) * easeProgress;
+        controls.target.y = startTarget.y + (targetTarget.y - startTarget.y) * easeProgress;
+        controls.target.z = startTarget.z + (targetTarget.z - startTarget.z) * easeProgress;
+        
+        // Update controls
+        controls.update();
+        
+        if (progress < 1) {
+          requestAnimationFrame(animateReset);
+        }
+      };
+      
+      requestAnimationFrame(animateReset);
+    };
 
     // Cleanup function
     return () => {
@@ -586,8 +806,15 @@ export default function SphereScene({
           if (obj.material instanceof THREE.Material) obj.material.dispose();
         }
       });
+
+      // Remove event listeners
+      canvasRef.current?.removeEventListener('mousemove', handleMouseMove);
+      canvasRef.current?.removeEventListener('mouseleave', handleMouseLeave);
+
+      // Clean up the window object
+      delete window.recenterCamera;
     };
-  }, [clusterEmbeddings, activeTab, visibleClusters]);
+  }, [clusterEmbeddings, activeTab, visibleClusters, selectedCluster]);
 
   // Toggle cluster visibility handler
   const toggleClusterVisibility = (clusterId: string) => {
@@ -647,18 +874,41 @@ export default function SphereScene({
 
   // Otherwise, show the 3D canvas
   return (
-    <div className="relative w-full h-full">
-      <canvas ref={canvasRef} />
+    <div className="relative w-full h-full" ref={containerRef}>
+      <canvas ref={canvasRef} className="w-full h-full" />
+
+      {/* Hover Information Box - positioned based on sphere location */}
+      {hoveredNode && hoverPosition && (
+        <div 
+          className="absolute z-10 bg-white/90 backdrop-blur-sm p-3 rounded-lg shadow-md max-w-xs"
+          style={{
+            left: `${hoverPosition.x}px`,
+            top: `${hoverPosition.y}px`,
+            transform: 'translate(0, -100%)'
+          }}
+        >
+          <h3 className="text-sm font-semibold text-gray-800">Node Information</h3>
+          <div className="text-sm text-gray-600 mt-1">
+            <p>ID: {hoveredNode.id}</p>
+            <p>Cluster: {hoveredNode.cluster_id}</p>
+            {hoveredNode.resume_id !== undefined && (
+              <p>Resume ID: {hoveredNode.resume_id}</p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Cluster Legend */}
       {activeTab === "clusters" && clusterEmbeddings?.clusters && (
         <div className="absolute top-4 left-4 z-10 flex flex-col gap-3 max-w-md">
           {/* Clusters Toggle Panel */}
-          <div className="bg-white/80 backdrop-blur-sm p-3 rounded-lg shadow-md max-h-[40vh] overflow-y-auto">
-            <h3 className="text-sm font-semibold mb-2 text-gray-800">
-              Clusters
-            </h3>
-            <div className="space-y-2">
+          <div className="bg-white/80 backdrop-blur-sm p-3 rounded-lg shadow-md max-h-[40vh] overflow-y-auto flex flex-col">
+            <div className="flex justify-between items-center mb-2">
+              <h3 className="text-sm font-semibold text-gray-800">
+                Clusters
+              </h3>
+            </div>
+            <div className="space-y-2 flex-grow">
               {Object.entries(clusterEmbeddings.clusters).map(
                 ([clusterId, clusterInfo]: [string, any], index) => {
                   const clusterColor =
@@ -705,6 +955,17 @@ export default function SphereScene({
                 }
               )}
             </div>
+            
+            {/* Recenter button at the bottom of the panel */}
+            <button
+              onClick={handleRecenter}
+              className="mt-3 w-full py-2 bg-blue-50 hover:bg-blue-100 text-blue-600 font-medium rounded text-sm transition-colors duration-200 flex justify-center items-center"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M4 2a2 2 0 00-2 2v11a3 3 0 106 0V4a2 2 0 00-2-2H4zm1 14a1 1 0 100-2 1 1 0 000 2zm5-1.757l4.9-4.9a2 2 0 000-2.828L13.485 5.1a2 2 0 00-2.828 0L10 5.757v8.486zM16 18H9.071l6-6H16a2 2 0 012 2v2a2 2 0 01-2 2z" clipRule="evenodd" />
+              </svg>
+              Recenter View
+            </button>
           </div>
 
           {/* Cluster Analysis Panel */}
@@ -721,19 +982,19 @@ export default function SphereScene({
                   <span className="sr-only">Close</span>✕
                 </button>
               </div>
-              <div className="text-sm text-gray-600 whitespace-pre-wrap prose prose-sm max-w-none">
-                {clusterAnalyses[selectedCluster] ? (
-                  <ReactMarkdown>
-                    {clusterAnalyses[selectedCluster]}
-                  </ReactMarkdown>
-                ) : (
-                  "Loading analysis..."
-                )}
+              <div className="text-sm text-gray-600 whitespace-pre-wrap">
+                {clusterAnalyses[selectedCluster] || "Loading analysis..."}
               </div>
             </div>
           )}
         </div>
       )}
+      
+      {/* Information box in bottom right corner */}
+      <div className="absolute bottom-4 right-4 bg-gray-700/80 text-white p-3 rounded-lg shadow-lg max-w-xs">
+        <p className="text-sm">Click on spheres to view details</p>
+        <p className="text-sm">Drag to rotate | Scroll to zoom</p>
+      </div>
     </div>
   );
 }
