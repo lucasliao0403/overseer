@@ -86,7 +86,6 @@ export default function SphereScene({
   removedEmbeddings,
   activeTab = "clusters",
   clusterEmbeddings,
-  clusterData,
 }: SphereSceneProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const isDraggingRef = useRef(false);
