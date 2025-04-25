@@ -9,4 +9,4 @@ Next, clusters are identified and an LLM (Cohere CMD-A) extracts common traits t
 
 See our [Devpost](https://devpost.com/software/overseer-vn8fpc) for more information.
 
-Stack: Flask, Cohere CMD-A, Scikit Learn, numpy, pandas
+Stack: Flask, Next.js, Cohere CMD-A, numpy, pandas
