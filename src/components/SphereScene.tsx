@@ -824,11 +824,14 @@ export default function SphereScene({
       for (const clusterId of Object.keys(clusterEmbeddings.clusters || {})) {
         try {
           console.log(`Fetching analysis for cluster ${clusterId}`);
-          const analysis = await getClusterAnalysis(
-            parseInt(clusterId.substr(clusterId.length - 1), 10)
-          );
-          if (analysis && (analysis as any).analysis) {
-            analyses[clusterId] = (analysis as any).analysis;
+          // Extract the numeric part of the cluster ID properly
+          const clusterIdMatch = clusterId.match(/\d+/);
+          const clusterIdNumber = clusterIdMatch ? parseInt(clusterIdMatch[0], 10) : 0;
+          
+          const analysis = await getClusterAnalysis(clusterIdNumber) as { analysis?: string };
+          
+          if (analysis?.analysis) {
+            analyses[clusterId] = analysis.analysis;
           } else {
             analyses[clusterId] = "No analysis available for this cluster.";
           }
@@ -860,11 +863,36 @@ export default function SphereScene({
     return index >= 0 ? String.fromCharCode(65 + (index % 26)) : "?";
   };
 
-  // Add this function to clean markdown from analysis text
-  const cleanAnalysisText = (text: string) => {
+  // Update this function to clean all markdown from analysis text and remove cluster prefix
+  const cleanAnalysisText = (text: string, clusterId: string) => {
     if (!text) return "";
-    // Remove markdown asterisks from the beginning of the text
-    return text.replace(/^\*\*(.*?)\*\*/m, "$1");
+    
+    // Remove any "Cluster #X:" or "Cluster X:" prefix completely
+    let cleanedText = text
+      .replace(/Cluster #\d+:\s*/, "")
+      .replace(/Cluster [A-Z]:\s*/, "");
+    
+    // Remove all markdown formatting
+    cleanedText = cleanedText
+      // Remove bold formatting
+      .replace(/\*\*(.*?)\*\*/g, "$1")
+      // Remove italic formatting
+      .replace(/\*(.*?)\*/g, "$1")
+      // Remove heading markers
+      .replace(/^#+\s+/gm, "")
+      // Remove backticks for code
+      .replace(/`(.*?)`/g, "$1")
+      // Remove links but keep the text
+      .replace(/\[(.*?)\]\(.*?\)/g, "$1")
+      // Remove horizontal rules
+      .replace(/^\s*[-*_]{3,}\s*$/gm, "")
+      // Remove blockquotes
+      .replace(/^>\s+/gm, "")
+      // Remove list markers
+      .replace(/^[\s-]*[-*+]\s+/gm, "")
+      .replace(/^\s*\d+\.\s+/gm, "");
+      
+    return cleanedText;
   };
 
   // Component return: conditionally render if not clusters
@@ -1009,7 +1037,7 @@ export default function SphereScene({
             </div>
             <div className="text-xs text-gray-600 whitespace-pre-wrap leading-relaxed mt-2">
               {clusterAnalyses[selectedCluster]
-                ? cleanAnalysisText(clusterAnalyses[selectedCluster])
+                ? cleanAnalysisText(clusterAnalyses[selectedCluster], selectedCluster)
                 : "Loading analysis..."}
             </div>
           </div>

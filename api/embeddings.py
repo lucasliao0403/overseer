@@ -30,7 +30,7 @@ def generate_embeddings(df, resume_column='Resume_str', model_name="all-MiniLM-L
     
     return resume_embeddings
 
-def find_dense_clusters(embeddings, min_cluster_size=5, min_samples=5, n_clusters=5):
+def find_dense_clusters(embeddings, min_cluster_size=5, min_samples=5, n_clusters=10):
     """Find the N densest clusters using HDBSCAN"""
     print(f"Clustering {embeddings.shape[0]} embeddings...")
     
@@ -124,7 +124,7 @@ def save_clusters_to_csv(df, cluster_indices, output_dir="clusters"):
     combined_df.to_csv(combined_file, index=False)
     print(f"Saved combined file with all clusters to {combined_file}")
 
-def main(input_file=None):
+def main(input_file=None, n_clusters=6):
     # Load the resume dataset
     print("Loading resume dataset...")
     try:
@@ -166,12 +166,12 @@ def main(input_file=None):
         df.to_csv('cleaned_resumes.csv', index=False)
         print("Saved cleaned dataframe to cleaned_resumes.csv")
     
-    # Find the N densest clusters
-    n_clusters = 6  # Number of clusters to save
+    # Use the provided n_clusters value
+    print(f"Using {n_clusters} clusters as specified by user")
     _, densest_cluster_indices = find_dense_clusters(
         resume_embeddings, 
-        min_cluster_size=10,  # Adjust as needed
-        min_samples=5,        # Adjust as needed
+        min_cluster_size=10,  # Default value
+        min_samples=5,        # Default value
         n_clusters=n_clusters
     )
     

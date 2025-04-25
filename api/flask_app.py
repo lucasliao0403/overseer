@@ -10,7 +10,7 @@ import shutil
 import numpy as np
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+CORS(app, resources={r"/api/*": {"origins": "*"}})  # Enable CORS with more specific configuration
 
 # Create uploads directory if it doesn't exist
 UPLOAD_FOLDER = Path("uploads")
@@ -349,6 +349,15 @@ def upload_file():
     if not file.filename.endswith('.csv'):
         return jsonify({"error": "Only CSV files are supported"}), 400
     
+    # Get cluster count from request (default to 6 if not provided)
+    cluster_count = request.form.get('cluster_count', '6')
+    try:
+        cluster_count = int(cluster_count)
+        # Ensure cluster count is within valid range
+        cluster_count = max(1, min(10, cluster_count))
+    except ValueError:
+        cluster_count = 6  # Default if invalid value
+    
     # Create a unique ID for this upload
     upload_id = str(uuid.uuid4())
     upload_dir = UPLOAD_FOLDER / upload_id
@@ -368,10 +377,10 @@ def upload_file():
             
         rows_count = len(df)
         
-        # Run the pipeline asynchronously
-        # This will be a non-blocking call
+        # Run the pipeline asynchronously with the cluster count parameter
         subprocess.Popen(
-            ["python", "./main.py", "--input", str(file_path), "--job_id", upload_id],
+            ["python", "./main.py", "--input", str(file_path), "--job_id", upload_id, 
+             "--cluster_count", str(cluster_count)],
             # Redirect output to a log file
             stdout=open(upload_dir / "pipeline.log", "w"),
             stderr=subprocess.STDOUT
@@ -381,7 +390,8 @@ def upload_file():
             "message": "File uploaded successfully. Processing started.",
             "job_id": upload_id,
             "rows_count": rows_count,
-            "status": "processing"
+            "status": "processing",
+            "cluster_count": cluster_count
         })
         
     except Exception as e:
@@ -429,4 +439,4 @@ def get_job_status(job_id):
 
 if __name__ == '__main__':
     # Run the Flask app
-    app.run(debug=True, host='0.0.0.0', port=3001) 
+    app.run(debug=True, host='0.0.0.0', port=3002) 

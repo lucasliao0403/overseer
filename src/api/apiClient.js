@@ -1,5 +1,5 @@
 // API client for interacting with the backend
-const API_BASE_URL = "http://localhost:3001/api";
+const API_BASE_URL = "http://localhost:3002/api";
 
 // Ensure we don't have trailing slashes that might cause double-slash issues
 const getApiUrl = (endpoint) => {
@@ -25,13 +25,14 @@ export const getApiStatus = async () => {
 /**
  * Upload a CSV file to use as the dataset for unbiasing
  * @param {File} file - The CSV file to upload
+ * @param {number} clusterCount - Number of clusters to create (1-10)
  * @returns {Promise<Object>} Upload result with job ID
  */
 export const uploadDataset = async (file, clusterCount) => {
   try {
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('cluster_count', clusterCount);
+    formData.append('cluster_count', clusterCount.toString());
     
     const response = await fetch(getApiUrl('upload'), {
       method: 'POST',

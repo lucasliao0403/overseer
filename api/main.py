@@ -14,9 +14,12 @@ from create_unbiased_dataset import create_unbiased_dataset
 
 # Setup argument parser
 def parse_args():
-    parser = argparse.ArgumentParser(description="Unbiasing pipeline")
-    parser.add_argument("--input", type=str, help="Path to input CSV file")
-    parser.add_argument("--job_id", type=str, help="Job ID for this processing task")
+    """Parse command-line arguments"""
+    parser = argparse.ArgumentParser(description='Process resume data')
+    parser.add_argument('--input', type=str, help='Path to input CSV file')
+    parser.add_argument('--job_id', type=str, help='Job ID for this processing run')
+    parser.add_argument('--cluster_count', type=int, default=6, help='Number of clusters to create (1-10)')
+    
     return parser.parse_args()
 
 # Setup logging
@@ -86,6 +89,9 @@ def main():
     # Parse command-line arguments
     args = parse_args()
     
+    # Ensure cluster count is within valid range
+    cluster_count = max(1, min(10, args.cluster_count))
+    
     # Setup logging
     log_file = setup_logging(args.job_id)
     
@@ -109,7 +115,7 @@ def main():
         logging.info("STEP 1: GENERATING EMBEDDINGS AND FINDING CLUSTERS")
         logging.info("=" * 80)
         
-        df, embeddings = embeddings_main(input_file)
+        df, embeddings = embeddings_main(input_file, cluster_count)
         
         if df is None or embeddings is None:
             logging.error("Failed to generate embeddings. Exiting.")
