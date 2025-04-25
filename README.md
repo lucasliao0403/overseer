@@ -1,7 +1,6 @@
 
 # Overseer
 
-https://overseeer.vercel.app/
 Overseer filters hiring data for fairness.
 
 Users input source data, such as resumes or text-based records, which are then transformed into text embeddings to capture the semantic meaning of the text. 
