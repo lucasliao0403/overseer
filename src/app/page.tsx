@@ -13,6 +13,10 @@ import {
   getAllClustersInfo,
   getUnbiasedEmbeddingsData,
   getRemovedEmbeddingsData,
+  getAvailableDatasets,
+  getUnbiasedResumes,
+  getRemovedEntries,
+  getAllClustersDataset,
 } from "../api/apiClient";
 
 // Define interfaces for our API responses
@@ -29,16 +33,19 @@ interface ResumesResponse {
   total_pages?: number;
   page?: number;
   page_size?: number;
+  error?: string; // Added error property
 }
 
 interface SummaryResponse {
   summary: string;
+  error?: string; // Added error property
 }
 
 interface JobStatusResponse {
   job_id: string;
   status: string;
   log?: string;
+  error?: string; // Added error property
 }
 
 interface UploadResponse {
@@ -46,17 +53,16 @@ interface UploadResponse {
   job_id: string;
   rows_count: number;
   status: string;
+  cluster_count: number;
+  error?: string; // Added error property
 }
 
 // Add this interface to properly type the clusters info response
 interface ClustersInfoResponse {
-  clusters: {
-    [clusterId: string]: {
-      size: number;
-      center: number[];
-      [key: string]: any;
-    };
-  };
+  job_id?: string;
+  total_clusters?: number; // Make sure this is optional
+  clusters?: { [key: string]: ClusterInfo }; // Map cluster name to ClusterInfo
+  error?: string; // Make sure this is optional
 }
 
 // Add this interface near your other interfaces
@@ -65,6 +71,29 @@ interface EmbeddingsData {
   count: number;
   embeddings: number[][];
   file_size_bytes: number;
+  success?: boolean;
+  shape?: [number, number];
+  error?: string; // Added error property
+}
+
+interface ClusterInfo {
+  count: number;
+  dimensions: number;
+  embeddings: number[][]; // Array of embedding arrays
+}
+
+// NEW: Interface for the getAvailableDatasets response
+interface AvailableDatasetsResponse {
+  cleaned_resumes?: boolean;
+  unbiased_resumes?: boolean;
+  removed_entries?: boolean;
+  all_clusters?: boolean;
+  cluster_analysis?: boolean;
+  unbiased_embeddings_6d?: boolean;
+  removed_embeddings_6d?: boolean;
+  summary?: boolean;
+  individual_clusters?: string[]; // List of cluster filenames like "cluster_1.csv"
+  error?: string;
 }
 
 export default function Home() {
@@ -98,9 +127,13 @@ export default function Home() {
 
   useEffect(() => {
     const fetchData = async () => {
+      // Initial fetch doesn't have a jobId, perhaps we should remove this
+      // or only fetch if a previous jobId is stored (e.g., in localStorage)
+      // For now, commenting out initial fetch as it won't work without jobId
+      /*
       try {
-        const resumesData = (await getCleanedResumes(1, 10)) as ResumesResponse;
-        const summaryData = (await getUnbiasingSummary()) as SummaryResponse;
+        const resumesData = (await getCleanedResumes(jobId, 1, 10)) as ResumesResponse; // Requires jobId
+        const summaryData = (await getUnbiasingSummary(jobId)) as SummaryResponse; // Requires jobId
 
         // Update state with the data
         if (resumesData && resumesData.records) {
@@ -113,10 +146,11 @@ export default function Home() {
       } catch (error) {
         console.error("Error fetching initial data:", error);
       }
+      */
     };
 
     fetchData();
-  }, []);
+  }, []); // Removed jobId dependency as initial fetch is commented out
 
   // if (resumes) {
   //   console.log(resumes);
@@ -127,11 +161,12 @@ export default function Home() {
 
   // Poll for job status updates
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval: NodeJS.Timeout | null = null;
 
     if (jobId && ["processing", "running"].includes(jobStatus || "")) {
       setUploadStatus("processing");
       interval = setInterval(async () => {
+        if (!jobId) return; // Extra check inside interval
         try {
           const status = (await getJobStatus(jobId)) as JobStatusResponse;
           setJobStatus(status.status);
@@ -141,47 +176,77 @@ export default function Home() {
             setUploadStatus("complete");
             setShowSuccessNotification(true);
 
-            // Refresh data when job completes
-            const resumesData = (await getCleanedResumes(
-              1,
-              10
-            )) as ResumesResponse;
-            const summaryData =
-              (await getUnbiasingSummary()) as SummaryResponse;
-
-            if (resumesData && resumesData.records) {
-              setResumes(resumesData.records);
-            }
-
-            if (summaryData && summaryData.summary) {
-              setSummary(summaryData.summary);
-            }
-
-            // Fetch all cluster data at once
             try {
-              // Get all cluster analyses in one call
-              const clusterAnalyses = await getAllClusterAnalyses();
-              console.log("Retrieved all cluster analyses:", clusterAnalyses);
+              const available: AvailableDatasetsResponse =
+                await getAvailableDatasets(jobId);
+              console.log(`Available datasets for job ${jobId}:`, available);
 
-              // Get full clusters info in one call
-              const clustersInfo =
-                (await getAllClustersInfo()) as ClustersInfoResponse;
-              console.log("Retrieved complete clusters info:", clustersInfo);
-
-              if (
-                clustersInfo &&
-                typeof clustersInfo === "object" &&
-                "clusters" in clustersInfo
-              ) {
-                // Log the number of clusters found
-                const clusterIds = Object.keys(clustersInfo.clusters);
-                console.log(`Found ${clusterIds.length} clusters in total`);
-
-                // We now have all cluster data at once - no need for individual fetches
-                console.log("All cluster data successfully retrieved in bulk");
+              if (available.cleaned_resumes) {
+                const resumesData = (await getCleanedResumes(
+                  jobId,
+                  1,
+                  10
+                )) as ResumesResponse;
+                if (!resumesData.error && resumesData.records)
+                  setResumes(resumesData.records);
               }
-            } catch (error) {
-              console.error("Error fetching cluster data:", error);
+              if (available.summary) {
+                const summaryData = (await getUnbiasingSummary(
+                  jobId
+                )) as SummaryResponse;
+                if (!summaryData.error && summaryData.summary)
+                  setSummary(summaryData.summary);
+              }
+              if (available.cluster_analysis) {
+                const clusterAnalyses: any = await getAllClusterAnalyses(
+                  jobId!
+                );
+                if (!clusterAnalyses?.error) {
+                  console.log(
+                    "Retrieved all cluster analyses:",
+                    clusterAnalyses
+                  );
+                } else {
+                  console.error(
+                    "Failed to fetch cluster analyses:",
+                    clusterAnalyses.error
+                  );
+                }
+              }
+              if (
+                available.individual_clusters &&
+                available.individual_clusters.length > 0
+              ) {
+                const clustersInfo = (await getAllClustersInfo(
+                  jobId
+                )) as ClustersInfoResponse;
+                if (!clustersInfo.error) {
+                  console.log(
+                    "Retrieved complete clusters info:",
+                    clustersInfo
+                  );
+                  setClusterData(clustersInfo);
+                }
+              }
+              if (available.unbiased_embeddings_6d) {
+                const unbiasedData = (await getUnbiasedEmbeddingsData(
+                  jobId
+                )) as EmbeddingsData;
+                if (!unbiasedData.error) setEmbeddingsData(unbiasedData);
+              }
+              if (available.removed_embeddings_6d) {
+                const removedData = (await getRemovedEmbeddingsData(
+                  jobId
+                )) as EmbeddingsData;
+                if (!removedData.error) setRemovedEmbeddingsData(removedData);
+              }
+
+              setShowDefaultObjects(false);
+            } catch (fetchError) {
+              console.error(
+                `Error fetching data after job ${jobId} completion:`,
+                fetchError
+              );
             }
 
             setIsLoading(false);
@@ -200,10 +265,13 @@ export default function Home() {
           } else if (status.status === "failed") {
             setUploadStatus("error");
             setIsLoading(false);
+            // Optionally clear jobId here or keep it for retry?
           }
         } catch (error) {
           console.error("Error checking job status:", error);
           setUploadStatus("error");
+          // Consider clearing interval or jobId on status check failure
+          if (interval) clearInterval(interval);
         }
       }, 2000); // Check every 2 seconds
     }
@@ -211,37 +279,56 @@ export default function Home() {
     return () => {
       if (interval) clearInterval(interval);
     };
+    // Dependency array includes jobId and jobStatus
   }, [jobId, jobStatus]);
 
   const handleUpload = async () => {
+    // Reset previous job state if any
+    setJobId(null);
+    setJobStatus(null);
+    setProcessingLog("");
+    setUploadStatus("idle");
+    setEmbeddingsData(null);
+    setRemovedEmbeddingsData(null);
+    setClusterData(null);
+    setShowDefaultObjects(true);
+    setSummary("");
     setShowUploadModal(true);
   };
 
+  // This function is likely deprecated or needs jobId
   const handleFilter = async () => {
+    if (!jobId) {
+      alert("Please complete a processing job first.");
+      return;
+    }
     setIsLoading(true);
     try {
-      // For now, we're just downloading the unbiased dataset
-      const blob = await downloadFile("unbiased_resumes");
+      const blob = await downloadFile(jobId, "unbiased_resumes");
       if (blob) {
-        saveFile(blob, "unbiased_resumes.csv");
+        saveFile(blob, `unbiased_resumes_${jobId.substring(0, 8)}.csv`);
       }
     } catch (error) {
-      console.error("Error filtering files:", error);
+      console.error("Error filtering/downloading files:", error);
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleDownload = async () => {
+    if (!jobId) {
+      alert("Please complete a processing job first.");
+      return;
+    }
     setIsLoading(true);
     try {
-      // Download the summary text
-      const blob = await downloadFile("summary");
+      // Download the summary text for the current job
+      const blob = await downloadFile(jobId, "summary");
       if (blob) {
-        saveFile(blob, "unbiasing_summary.txt");
+        saveFile(blob, `unbiasing_summary_${jobId.substring(0, 8)}.txt`);
       }
     } catch (error) {
-      console.error("Error downloading files:", error);
+      console.error("Error downloading summary file:", error);
     } finally {
       setIsLoading(false);
     }
@@ -328,69 +415,87 @@ export default function Home() {
   };
 
   const handleFetchAndLogEmbeddings = async () => {
+    if (!jobId) {
+      alert("Please upload and process a dataset first.");
+      return;
+    }
     setIsLoading(true);
     try {
-      console.log("Fetching unbiased embeddings data...");
-      const data = (await getUnbiasedEmbeddingsData()) as EmbeddingsData;
+      console.log(`Fetching unbiased embeddings data for job ${jobId}...`);
+      // Use non-null assertion
+      const data = (await getUnbiasedEmbeddingsData(jobId!)) as EmbeddingsData;
 
-      // Log the entire embeddings data to console
       console.log("Unbiased embeddings data:", data);
+      if (data.error) throw new Error(data.error); // Handle potential API error
+
       console.log("Number of embeddings:", data.count);
       console.log("Embedding dimensions:", data.dimensions);
-      console.log("First embedding:", data.embeddings[0]);
+      console.log("First embedding:", data.embeddings?.[0]);
 
       alert(
         `Successfully fetched ${data.count} embeddings. Check the console.`
       );
     } catch (error) {
       console.error("Error fetching embeddings:", error);
-      alert("Error fetching embeddings data");
+      alert(
+        `Error fetching embeddings data: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleFetchEmbeddingsInfo = async () => {
+    if (!jobId) {
+      alert("Please upload and process a dataset first.");
+      return;
+    }
     setIsLoading(true);
     setShowDefaultObjects(false);
 
     try {
-      // Get unbiased embeddings
-      const unbiasedEmbeddings =
-        (await getUnbiasedEmbeddingsData()) as EmbeddingsData;
+      // Use non-null assertion for jobId
+      const unbiasedEmbeddings = (await getUnbiasedEmbeddingsData(
+        jobId!
+      )) as EmbeddingsData;
       console.log("Unbiased embeddings:", unbiasedEmbeddings);
+      if (unbiasedEmbeddings.error)
+        throw new Error(`Unbiased fetch failed: ${unbiasedEmbeddings.error}`);
 
-      // Get removed embeddings
-      const removedEmbeddings =
-        (await getRemovedEmbeddingsData()) as EmbeddingsData;
+      const removedEmbeddings = (await getRemovedEmbeddingsData(
+        jobId!
+      )) as EmbeddingsData;
       console.log("Removed embeddings:", removedEmbeddings);
+      if (removedEmbeddings.error)
+        throw new Error(`Removed fetch failed: ${removedEmbeddings.error}`);
 
-      // Get all cluster analyses in one call
-      const clusterAnalyses = await getAllClusterAnalyses();
+      const clusterAnalyses: any = await getAllClusterAnalyses(jobId!); // Use assertion
       console.log("Retrieved all cluster analyses:", clusterAnalyses);
+      if (clusterAnalyses?.error)
+        throw new Error(`Analyses fetch failed: ${clusterAnalyses.error}`); // Optional chaining check
 
-      // Get full clusters info in one call
-      const clustersInfo = (await getAllClustersInfo()) as ClustersInfoResponse;
+      const clustersInfo = (await getAllClustersInfo(
+        jobId!
+      )) as ClustersInfoResponse; // Use assertion
       console.log("Retrieved complete clusters info:", clustersInfo);
+      if (clustersInfo.error)
+        throw new Error(`Cluster info fetch failed: ${clustersInfo.error}`);
 
       // Update state with fetched data
       setEmbeddingsData(unbiasedEmbeddings);
       setRemovedEmbeddingsData(removedEmbeddings);
       setClusterData(clustersInfo);
-
-      setIsLoading(false);
-
-      // Remove this alert or replace with a more subtle indication
-      // alert("Successfully fetched embeddings and clusters data. Check the console.");
-
-      // Optional: You can update a state variable to show a status in the UI instead
-      // setFetchStatus('success');
     } catch (error) {
       console.error("Error fetching embeddings info:", error);
+      alert(
+        `Error fetching data: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    } finally {
       setIsLoading(false);
-
-      // Remove this alert
-      // alert("Error fetching embeddings info. Please try again.");
     }
   };
 
@@ -451,27 +556,27 @@ export default function Home() {
   // Add this function to filter clusters based on the slider value
   const getFilteredClusterData = useCallback(() => {
     if (!clusterData || !clusterData.clusters) return null;
-    
+
     // Get all cluster IDs
     const allClusterIds = Object.keys(clusterData.clusters);
-    
+
     // Sort clusters by size (optional, depends on how you want to prioritize)
-    const sortedClusterIds = allClusterIds.sort((a, b) => 
-      clusterData.clusters[b].size - clusterData.clusters[a].size
+    const sortedClusterIds = allClusterIds.sort(
+      (a, b) => clusterData.clusters[b].size - clusterData.clusters[a].size
     );
-    
+
     // Take only the first n clusters based on slider
     const selectedClusterIds = sortedClusterIds.slice(0, clusterCount);
-    
+
     // Create a filtered version of the cluster data
-    const filteredClusters: {[key: string]: any} = {};
-    selectedClusterIds.forEach(id => {
+    const filteredClusters: { [key: string]: any } = {};
+    selectedClusterIds.forEach((id) => {
       filteredClusters[id] = clusterData.clusters[id];
     });
-    
+
     return {
       ...clusterData,
-      clusters: filteredClusters
+      clusters: filteredClusters,
     };
   }, [clusterData, clusterCount]);
 
@@ -482,26 +587,138 @@ export default function Home() {
   }, [clusterCount, clusterData]);
 
   const fetchEmbeddings = async () => {
+    if (!jobId) {
+      alert("Please complete a processing job first.");
+      return;
+    }
     setIsLoading(true);
     try {
-      // Fetch unbiased embeddings
-      const unbiasedData = await getUnbiasedEmbeddingsData() as EmbeddingsData;
+      // Fetch unbiased embeddings for the current job
+      const unbiasedData = (await getUnbiasedEmbeddingsData(
+        jobId
+      )) as EmbeddingsData;
       setEmbeddingsData(unbiasedData);
-      
-      // Fetch removed embeddings
-      const removedData = await getRemovedEmbeddingsData() as EmbeddingsData;
+
+      // Fetch removed embeddings for the current job
+      const removedData = (await getRemovedEmbeddingsData(
+        jobId
+      )) as EmbeddingsData;
       setRemovedEmbeddingsData(removedData);
-      
-      // Fetch cluster data
-      const clustersInfo = await getAllClustersInfo();
+
+      // Fetch cluster data for the current job
+      const clustersInfo = await getAllClustersInfo(jobId);
       setClusterData(clustersInfo);
-      
+
       // Only hide default objects after embeddings are fetched
       setShowDefaultObjects(false);
     } catch (error) {
       console.error("Error fetching embeddings:", error);
+      // TODO: Set error state for UI
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // This function is defined within Home component but not used,
+  // let's assume it might be used later or remove it.
+  // We will fix the API calls within it for now.
+  const fetchAllDatasetStats = async (currentJobId: string | null) => {
+    if (!currentJobId) {
+      console.warn("fetchAllDatasetStats called without jobId");
+      return { error: "Job ID is required." };
+    }
+    try {
+      const available: AvailableDatasetsResponse = await getAvailableDatasets(
+        currentJobId
+      );
+      if (available.error) {
+        throw new Error(available.error);
+      }
+      const stats: any = {
+        cleanedResumes: null,
+        unbiasedResumes: null,
+        removedEntries: null,
+        allClusters: null,
+        clusters: null,
+      };
+
+      if (available.cleaned_resumes) {
+        const data = (await getCleanedResumes(
+          currentJobId,
+          1,
+          1
+        )) as ResumesResponse;
+        if (!data.error)
+          stats.cleanedResumes = {
+            totalRecords: data.total_records || 0,
+            totalPages: data.total_pages || 0,
+          };
+      }
+      if (available.unbiased_resumes) {
+        const data = (await getUnbiasedResumes(
+          currentJobId,
+          1,
+          1
+        )) as ResumesResponse;
+        if (!data.error)
+          stats.unbiasedResumes = {
+            totalRecords: data.total_records || 0,
+            totalPages: data.total_pages || 0,
+          };
+      }
+      if (available.removed_entries) {
+        const data = (await getRemovedEntries(
+          currentJobId,
+          1,
+          1
+        )) as ResumesResponse;
+        if (!data.error)
+          stats.removedEntries = {
+            totalRecords: data.total_records || 0,
+            totalPages: data.total_pages || 0,
+          };
+      }
+      if (available.all_clusters) {
+        const data = (await getAllClustersDataset(
+          currentJobId,
+          1,
+          1
+        )) as ResumesResponse;
+        if (!data.error)
+          stats.allClusters = {
+            totalRecords: data.total_records || 0,
+            totalPages: data.total_pages || 0,
+          };
+      }
+      if (
+        available.individual_clusters &&
+        available.individual_clusters.length > 0
+      ) {
+        const clustersInfo = (await getAllClustersInfo(
+          currentJobId
+        )) as ClustersInfoResponse;
+        if (!clustersInfo.error) {
+          stats.clusters = {
+            totalClusters: clustersInfo.total_clusters || 0,
+            clusterSizes: Object.entries(clustersInfo.clusters || {}).reduce(
+              (acc, [key, value]) => {
+                acc[key] = value.count || 0;
+                return acc;
+              },
+              {} as { [key: string]: number }
+            ),
+          };
+        }
+      }
+
+      console.log("Fetched stats:", stats);
+      return stats;
+    } catch (error: any) {
+      console.error(
+        `Error fetching dataset stats for job ${currentJobId}:`,
+        error
+      );
+      return { error: error.message };
     }
   };
 

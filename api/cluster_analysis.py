@@ -7,332 +7,337 @@ from pathlib import Path
 import numpy as np
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
+import datetime # Import datetime for logging
 
 # Load environment variables from .env file
 load_dotenv()
 
 # Get Cohere API key
 CO_API_KEY = os.getenv("COHERE_API_KEY")
-co = cohere.ClientV2(CO_API_KEY)
+if not CO_API_KEY:
+    print("Warning: COHERE_API_KEY not found in environment variables. Analysis will likely fail.")
+    co = None
+else:
+    try:
+        co = cohere.ClientV2(CO_API_KEY)
+        print("Cohere client initialized.")
+    except Exception as e:
+        print(f"Error initializing Cohere client: {e}")
+        co = None
 
-def analyze_cluster(cluster_df, cluster_num):
+def analyze_cluster(cluster_df, cluster_label, job_dir):
     """
     Analyze a cluster using Cohere LLM to identify patterns.
     
     Args:
         cluster_df: DataFrame containing the cluster data
-        cluster_num: The number/identifier of the cluster
+        cluster_label: The label/identifier of the cluster
+        job_dir: Path object for the job directory
     
     Returns:
-        The analysis results from Cohere
+        The analysis results from Cohere or an error message
     """
+    if co is None:
+        return f"ANALYSIS SKIPPED: Cohere client not initialized (API key missing or invalid?)."
+
     # Sample some resumes from the cluster (limit to 5 to avoid token limits)
     sample_size = min(5, len(cluster_df))
-    sample_df = cluster_df.sample(sample_size)
+    if sample_size == 0:
+        return "ANALYSIS SKIPPED: Cluster is empty."
+    sample_df = cluster_df.sample(sample_size, random_state=42) # Use random_state for consistency
     
     # Prepare the prompt with resume samples
     resume_samples = []
     
     for i, row in sample_df.iterrows():
-        # Get the resume text and truncate if too long
         resume_text = str(row['Resume_str'])[:2000]  # Limit to 2000 chars
-        
-        sample = f"Resume #{i}:\n{resume_text}\n\n"
+        # Use original index if available, otherwise just use row number
+        resume_id = row.get('Unnamed: 0', i)
+        sample = f"Resume #{resume_id}:\n{resume_text}\n\n"
         resume_samples.append(sample)
     
-    resume_text = "\n".join(resume_samples)
+    resume_text_block = "\n".join(resume_samples)
     
     # Craft the prompt
-    prompt = f"""`
-    I have a cluster (Cluster #{cluster_num}) of resume data. Here are {sample_size} sample resumes from this cluster:
-    
-    {resume_text}
-    
-    Based on only these samples, please analyze and identify:
-    - Common skills, experiences, or qualifications in this cluster
-    - The likely job roles or industries these resumes target
-    - Any other notable patterns or similarities
-    
-    Format your response as a concise, direct, three sentence summary of the cluster. 
-    Three sentences maximum for the whole response. 
-    Do not use markdown. 
-    Give a brief title for the cluster, then give two newlines, then give the summary.
-    
-    You can use markdown for the title. DO NOT USE MARKDOWN FOR THE SUMMARY.
-    
-    """
+    prompt = f"""
+Analyze the following {sample_size} sample resumes from Cluster #{cluster_label}:
+
+{resume_text_block}
+
+Based *only* on these samples, provide:
+1. A concise title for the cluster (e.g., "Software Engineers - Web Focus"). Enclose in ** **.
+2. A 2-sentence summary identifying common skills, experiences, qualifications, or targeted roles/industries.
+
+**Example Format:**
+**Data Scientists - NLP/ML**
+
+This cluster features resumes strong in Python, machine learning libraries (Scikit-learn, TensorFlow), and NLP techniques. Candidates appear to target data science roles with an emphasis on natural language processing.
+
+**Your analysis:**
+"""
     
     # Make the API call to Cohere with error handling
+    print(f"  Calling Cohere API for Cluster {cluster_label}...")
     try:
+        # Using chat endpoint V2 - Use 'messages' list format
         response = co.chat(
-            model="command-a-03-2025",
+            model="command-r-plus", # Use latest model
             messages=[{"role": "user", "content": prompt}]
         )
-        print(response)
-        return response.message.content[0].text
+        analysis_text = response.text
+        print(f"  Cohere response received for Cluster {cluster_label}.")
+        return analysis_text
+
     except Exception as e:
         error_message = f"Error calling Cohere API: {str(e)}"
-        print(f"ERROR: {error_message}")
+        print(f"ERROR analyzing Cluster {cluster_label}: {error_message}")
         
-        # Log the error to a file
-        with open("cohere_api_errors.log", "a") as error_log:
-            import datetime
-            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            error_log.write(f"[{timestamp}] Cluster {cluster_num}: {error_message}\n")
-            
+        # Log the error to a job-specific file
+        log_dir = job_dir / "logs"
+        log_dir.mkdir(exist_ok=True)
+        error_log_file = log_dir / "cohere_api_errors.log"
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open(error_log_file, "a") as error_log:
+            error_log.write(f"[{timestamp}] Cluster {cluster_label}: {error_message}\n")
+        
         # Return error message as the analysis result
-        return f"ANALYSIS FAILED: {error_message}\n\nPlease check cohere_api_errors.log for details."
+        return f"ANALYSIS FAILED: {error_message}\nPlease check {error_log_file.relative_to(job_dir.parent)} for details."
 
-def save_cluster_embeddings(cluster_df, cluster_num, clusters_dir):
+def save_cluster_embeddings(cluster_df, cluster_label, job_dir):
     """
-    Save embeddings for resumes in this cluster and convert to 6D using PCA.
+    Save embeddings for resumes in this cluster (both full-dim and 6D PCA).
+    Reads all embeddings from the job's main NPY file.
     
     Args:
-        cluster_df: DataFrame containing the cluster data
-        cluster_num: The number/identifier of the cluster
-        clusters_dir: Path to the clusters directory
-        
+        cluster_df: DataFrame containing the cluster data (must contain original indices)
+        cluster_label: The number/identifier of the cluster
+        job_dir: Path object for the job directory
+    
     Returns:
-        Path to the saved embeddings file
+        Path to the saved 6D NPY embeddings file, or None on failure.
     """
-    print(f"Calculating embeddings for Cluster {cluster_num}...")
-    
-    # Check if embeddings file exists
-    if not os.path.exists("resume_embeddings.npy"):
-        print(f"ERROR: Embeddings file 'resume_embeddings.npy' not found. Cannot save cluster embeddings.")
+    print(f"Extracting and processing embeddings for Cluster {cluster_label}...")
+    embeddings_file = job_dir / "resume_embeddings.npy"
+    clusters_output_dir = job_dir / "clusters"
+    clusters_output_dir.mkdir(exist_ok=True)
+
+    # Ensure the main embeddings file exists for the job
+    if not embeddings_file.exists():
+        print(f"ERROR: Main embeddings file '{embeddings_file}' not found. Cannot process cluster embeddings.")
         return None
-    
-    # Load all embeddings
-    all_embeddings = np.load("resume_embeddings.npy")
-    
-    # Get resume indices from the cluster
-    # First determine if we have an index column or need to use DataFrame index
-    if 'Unnamed: 0' in cluster_df.columns:
-        # This is likely the original index
-        resume_indices = cluster_df['Unnamed: 0'].values
-    else:
-        # Use the DataFrame index directly
-        resume_indices = cluster_df.index.values
-    
-    # Ensure indices are within range
-    valid_indices = [idx for idx in resume_indices if idx < len(all_embeddings)]
-    
-    if not valid_indices:
-        print(f"WARNING: No valid indices found for Cluster {cluster_num}. Skipping embeddings extraction.")
+
+    # Load all embeddings for the job
+    try:
+        all_embeddings = np.load(embeddings_file)
+        print(f"  Loaded main embeddings. Shape: {all_embeddings.shape}")
+    except Exception as e:
+        print(f"ERROR: Could not load main embeddings file '{embeddings_file}': {e}")
         return None
-    
-    # Extract embeddings for this cluster
+
+    # Get resume indices from the cluster dataframe
+    # IMPORTANT: Assumes the dataframe index IS the original index from the cleaned CSV
+    # If embeddings.py saved 'cleaned_resumes.csv' without index, this needs adjustment.
+    # Let's assume the index is correct for now.
+    resume_indices = cluster_df.index.values
+
+    # Ensure indices are valid for the loaded embeddings array
+    valid_indices_mask = (resume_indices >= 0) & (resume_indices < len(all_embeddings))
+    valid_indices = resume_indices[valid_indices_mask]
+
+    if len(valid_indices) != len(resume_indices):
+        print(f"  Warning: {len(resume_indices) - len(valid_indices)} indices were out of bounds for the embeddings array.")
+
+    if len(valid_indices) == 0:
+        print(f"  ERROR: No valid resume indices found for Cluster {cluster_label}. Cannot extract embeddings.")
+        return None
+
+    # Extract the corresponding embeddings
     cluster_embeddings = all_embeddings[valid_indices]
-    
-    # Save full-dimensional embeddings
-    embeddings_data = {
-        "cluster_id": cluster_num,
-        "total_embeddings": len(valid_indices),
-        "embeddings": [
-            {
-                "id": i,
-                "resume_id": int(resume_id),
-                "cluster_id": cluster_num,
-                "embedding": embedding.tolist()
-            }
-            for i, (resume_id, embedding) in enumerate(zip(valid_indices, cluster_embeddings))
-        ]
-    }
-    
-    # Save to a JSON file in the clusters directory
-    embeddings_file = clusters_dir / f"cluster_{cluster_num}_embeddings.json"
-    with open(embeddings_file, 'w') as f:
-        json.dump(embeddings_data, f)
-    
-    print(f"  Saved {len(valid_indices)} full-dimensional embeddings to {embeddings_file}")
-    
-    # Now reduce to 6D with PCA
-    # First standardize the data
-    scaler = StandardScaler()
-    scaled_embeddings = scaler.fit_transform(cluster_embeddings)
-    
-    # Apply PCA
-    pca = PCA(n_components=6)
-    embeddings_6d = pca.fit_transform(scaled_embeddings)
-    
-    # Normalize the embeddings to match unbiased embeddings
-    embeddings_6d = normalize_embeddings(embeddings_6d)
-    
-    # Create data structure for 6D embeddings
-    embeddings_6d_data = {
-        "cluster_id": cluster_num,
-        "total_embeddings": len(valid_indices),
-        "dimensions": 6,
-        "embeddings": [
-            {
-                "id": i,
-                "resume_id": int(resume_id),
-                "cluster_id": cluster_num,
-                "embedding": embedding.tolist()
-            }
-            for i, (resume_id, embedding) in enumerate(zip(valid_indices, embeddings_6d))
-        ]
-    }
-    
-    # Save 6D embeddings to a separate JSON file
-    embeddings_6d_file = clusters_dir / f"cluster_{cluster_num}_embeddings_6d.json"
-    with open(embeddings_6d_file, 'w') as f:
-        json.dump(embeddings_6d_data, f)
-    
-    # Also save as NPY for more efficient loading
-    embeddings_6d_npy_file = clusters_dir / f"cluster_{cluster_num}_embeddings_6d.npy"
-    np.save(embeddings_6d_npy_file, embeddings_6d)
-    
-    print(f"  Saved {len(valid_indices)} 6D embeddings to {embeddings_6d_file} and {embeddings_6d_npy_file}")
-    
-    # Calculate and print explained variance
-    explained_variance = sum(pca.explained_variance_ratio_) * 100
-    print(f"  PCA explained variance with 6 components: {explained_variance:.2f}%")
-    
-    return embeddings_file
+    print(f"  Extracted {len(cluster_embeddings)} embeddings for Cluster {cluster_label}.")
+
+    # --- Save Full Dimensional Embeddings (Optional, consider removing if not needed) ---
+    # Saving full dim might be redundant if create_unbiased_dataset uses the main NPY
+    # embeddings_data_full = {
+    #     "cluster_id": int(cluster_label),
+    #     "total_embeddings": len(valid_indices),
+    #     "embeddings": [
+    #         {"id": i, "resume_id": int(resume_id), "embedding": embedding.tolist()}
+    #         for i, (resume_id, embedding) in enumerate(zip(valid_indices, cluster_embeddings))
+    #     ]
+    # }
+    # embeddings_full_json_file = clusters_output_dir / f"cluster_{cluster_label}_embeddings_full.json"
+    # try:
+    #     with open(embeddings_full_json_file, 'w') as f:
+    #         json.dump(embeddings_data_full, f, indent=2)
+    #     print(f"  Saved {len(valid_indices)} full-dimensional embeddings to {embeddings_full_json_file.name}")
+    # except Exception as e:
+    #     print(f"  Error saving full-dimensional embeddings JSON: {e}")
+    # ---------------------------------------------------------------------------------
+
+    # --- Reduce to 6D with PCA --- 
+    print(f"  Applying PCA to reduce {len(cluster_embeddings)} embeddings to 6D...")
+    embeddings_6d = None
+    if len(cluster_embeddings) < 6:
+         print(f"  Warning: Cannot perform PCA to 6 dimensions with only {len(cluster_embeddings)} samples. Skipping PCA.")
+    else:
+        try:
+            # Standardize before PCA
+            scaler = StandardScaler()
+            scaled_embeddings = scaler.fit_transform(cluster_embeddings)
+            # Apply PCA
+            pca = PCA(n_components=6)
+            embeddings_6d = pca.fit_transform(scaled_embeddings)
+            # Normalize the 6D embeddings (L2 norm)
+            embeddings_6d = normalize_embeddings(embeddings_6d)
+            explained_variance = sum(pca.explained_variance_ratio_) * 100
+            print(f"  PCA completed. Explained variance with 6 components: {explained_variance:.2f}%")
+        except Exception as e:
+             print(f"  Error during PCA reduction for Cluster {cluster_label}: {e}. Skipping 6D output.")
+             embeddings_6d = None # Ensure we don't try to save failed PCA results
+
+    # --- Save 6D Embeddings --- 
+    embeddings_6d_npy_file = None
+    if embeddings_6d is not None and embeddings_6d.size > 0:
+        embeddings_6d_npy_file = clusters_output_dir / f"cluster_{cluster_label}_embeddings_6d.npy"
+        embeddings_6d_json_file = clusters_output_dir / f"cluster_{cluster_label}_embeddings_6d.json"
+
+        # Save 6D as NPY (preferred for API)
+        try:
+            np.save(embeddings_6d_npy_file, embeddings_6d)
+            print(f"  Saved {len(embeddings_6d)} 6D embeddings to {embeddings_6d_npy_file.name}")
+        except Exception as e:
+            print(f"  Error saving 6D NPY embeddings: {e}")
+            embeddings_6d_npy_file = None # Indicate failure
+
+        # Save 6D as JSON (optional, might be useful for debugging)
+        # embeddings_6d_data = {
+        #     "cluster_id": int(cluster_label),
+        #     "total_embeddings": len(valid_indices),
+        #     "dimensions": 6,
+        #     "embeddings": [
+        #         {"id": i, "resume_id": int(resume_id), "embedding": embedding.tolist()}
+        #         for i, (resume_id, embedding) in enumerate(zip(valid_indices, embeddings_6d))
+        #     ]
+        # }
+        # try:
+        #     with open(embeddings_6d_json_file, 'w') as f:
+        #         json.dump(embeddings_6d_data, f, indent=2)
+        #     print(f"  Saved {len(embeddings_6d)} 6D embeddings to {embeddings_6d_json_file.name}")
+        # except Exception as e:
+        #     print(f"  Error saving 6D JSON embeddings: {e}")
+    else:
+        print("  Skipping saving of 6D embeddings due to previous errors or lack of data.")
+
+    return embeddings_6d_npy_file # Return path to NPY file or None
 
 def normalize_embeddings(embeddings):
     """
     Normalize each embedding vector to unit length (L2 norm)
     """
-    # Calculate L2 norm (magnitude) of each vector
-    norms = np.sqrt(np.sum(np.square(embeddings), axis=1, keepdims=True))
-    # Prevent division by zero
-    norms = np.maximum(norms, 1e-10)
-    # Normalize to unit vectors
+    norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+    norms = np.maximum(norms, 1e-10) # Prevent division by zero
     normalized_embeddings = embeddings / norms
     return normalized_embeddings
 
-def export_complete_dataset(cluster_files):
-    """
-    Export the original dataset with cluster information
-    """
-    print("Exporting complete dataset with cluster information...")
-    
-    # First, load all individual cluster files to get the mapping
-    cluster_mapping = {}
-    for cluster_file in cluster_files:
-        cluster_num = int(cluster_file.stem.split("_")[1])
-        cluster_df = pd.read_csv(cluster_file)
-        
-        # Get original indices if available or row numbers otherwise
-        if 'Unnamed: 0' in cluster_df.columns:
-            indices = cluster_df['Unnamed: 0'].tolist()
-        else:
-            # Create a synthetic index based on row position
-            indices = cluster_df.index.tolist()
-            
-        # Map these indices to this cluster
-        for idx in indices:
-            cluster_mapping[idx] = cluster_num
-    
-    # Load the original dataset
-    try:
-        # Try cleaned file first (should exist from embeddings.py)
-        if os.path.exists('cleaned_resumes.csv'):
-            print("Loading cleaned_resumes.csv...")
-            df = pd.read_csv('cleaned_resumes.csv')
-        else:
-            # Try original source
-            print("Loading original dataset...")
-            try:
-                df = pd.read_csv("hf://datasets/sankar12345/Resume-Dataset/Resume.csv")
-            except Exception:
-                print("Trying local file...")
-                df = pd.read_csv("Resume.csv")
-    except Exception as e:
-        print(f"Error loading dataset: {e}")
-        return
-    
-    # Add cluster information
-    df['cluster'] = -1  # Default to noise/unclustered
-    
-    # Map indices to clusters
-    for i, row in df.iterrows():
-        if i in cluster_mapping:
-            df.at[i, 'cluster'] = cluster_mapping[i]
-    
-    # Create the clusters directory if it doesn't exist
-    clusters_dir = Path("clusters")
-    clusters_dir.mkdir(exist_ok=True)
-    
-    # Save the complete dataset with cluster information
-    complete_file = clusters_dir / "all_clusters.csv"
-    df.to_csv(complete_file, index=False)
-    print(f"Saved complete dataset with cluster information to {complete_file}")
-    
-    # Print cluster distribution
-    cluster_counts = df['cluster'].value_counts().sort_index()
-    print("\nCluster distribution:")
-    for cluster, count in cluster_counts.items():
-        if cluster != -1:
-            print(f"Cluster {cluster}: {count} entries")
-    print(f"Noise/Unclustered: {cluster_counts.get(-1, 0)} entries")
-    
-    return df
+def main(job_dir: Path):
+    """Main function to analyze clusters for a specific job."""
+    print(f"--- Starting Cluster Analysis for job: {job_dir.name} ---")
+    clusters_input_dir = job_dir / "clusters"
+    analysis_output_dir = job_dir / "cluster_analysis"
+    analysis_output_dir.mkdir(exist_ok=True) # Ensure output dir exists
 
-def main():
-    # Create directory for analysis results
-    output_dir = Path("cluster_analysis")
-    output_dir.mkdir(exist_ok=True)
-    
-    # Get clusters from the individual CSV files
-    clusters_dir = Path("clusters")
-    
-    # Check if clusters directory exists
-    if not clusters_dir.exists():
-        print("Error: Clusters directory not found. Run embeddings.py first to generate clusters.")
+    # Check if the cluster directory exists
+    if not clusters_input_dir.exists() or not clusters_input_dir.is_dir():
+        print(f"Error: Clusters directory not found: {clusters_input_dir}")
+        print("Ensure embeddings.py ran successfully and created the clusters.")
         return
-    
-    # Get all cluster files
-    cluster_files = list(clusters_dir.glob("cluster_*.csv"))
-    
+
+    # Find cluster CSV files
+    cluster_files = sorted(list(clusters_input_dir.glob("cluster_*.csv"))) # Sort for consistent order
+
     if not cluster_files:
-        print("No cluster files found in the clusters directory.")
+        print(f"Error: No cluster CSV files found in {clusters_input_dir}")
+        print("Ensure embeddings.py ran successfully and saved cluster files.")
         return
-    
-    print(f"Found {len(cluster_files)} cluster files.")
-    
-    # Export complete dataset with cluster information
-    export_complete_dataset(cluster_files)
-    
-    # Analyze each cluster
+
+    print(f"Found {len(cluster_files)} cluster files to analyze.")
+
     all_analyses = {}
-    
+    processed_clusters_count = 0
+
+    # Analyze each cluster file
     for cluster_file in cluster_files:
-        cluster_num = int(cluster_file.stem.split("_")[1])
-        print(f"Analyzing Cluster {cluster_num}...")
-        
-        # Load the cluster data
-        cluster_df = pd.read_csv(cluster_file)
-        print(f"  Cluster size: {len(cluster_df)} resumes")
-        
-        # Save embeddings for this cluster (now includes 6D conversion)
-        save_cluster_embeddings(cluster_df, cluster_num, clusters_dir)
-        
-        # Analyze the cluster
-        analysis = analyze_cluster(cluster_df, cluster_num)
-        
-        # Save the analysis
-        all_analyses[f"Cluster {cluster_num}"] = analysis
-        
-        # Save individual analysis to file
-        with open(output_dir / f"cluster_{cluster_num}_analysis.txt", "w") as f:
-            f.write(analysis)
-        
-        print(f"  Analysis complete for Cluster {cluster_num}")
-        print(f"  Results saved to {output_dir}/cluster_{cluster_num}_analysis.txt")
-        print("\n" + "="*80 + "\n")
-        
-        # Print a preview of the analysis
-        print(f"ANALYSIS PREVIEW FOR CLUSTER {cluster_num}:")
-        print(analysis[:500] + "...\n")
-    
-    # Save all analyses to a single JSON file
-    with open(output_dir / "all_clusters_analysis.json", "w") as f:
-        json.dump(all_analyses, f, indent=2)
-    
-    print(f"All analyses saved to {output_dir}/all_clusters_analysis.json")
+        try:
+            # Extract cluster label from filename (e.g., cluster_1.csv -> 1)
+            cluster_label = int(cluster_file.stem.split('_')[1])
+            print(f"\nProcessing Cluster {cluster_label} from {cluster_file.name}...")
+        except (IndexError, ValueError):
+            print(f"Warning: Could not parse cluster label from filename '{cluster_file.name}'. Skipping.")
+            continue
+
+        try:
+            # Load cluster data WITH index
+            cluster_df = pd.read_csv(cluster_file, index_col=0)
+            print(f"  Loaded {len(cluster_df)} resumes for Cluster {cluster_label}.")
+
+            if 'Resume_str' not in cluster_df.columns:
+                 print(f"  Warning: 'Resume_str' column not found in {cluster_file.name}. Cannot perform text analysis. Trying to process embeddings only.")
+                 analysis_result = "ANALYSIS SKIPPED: 'Resume_str' column missing."
+            elif len(cluster_df) > 0:
+                # Perform Cohere analysis
+                analysis_result = analyze_cluster(cluster_df, cluster_label, job_dir)
+            else:
+                analysis_result = "ANALYSIS SKIPPED: Cluster dataframe is empty."
+
+            # Save individual analysis result to a text file
+            analysis_file_path = analysis_output_dir / f"cluster_{cluster_label}_analysis.txt"
+            with open(analysis_file_path, 'w') as f:
+                f.write(analysis_result)
+            print(f"  Saved analysis to {analysis_file_path.name}")
+            all_analyses[f"cluster_{cluster_label}"] = analysis_result
+
+            # --- Process and save embeddings for this cluster --- 
+            if len(cluster_df) > 0:
+                 # Pass the dataframe WITH the index loaded correctly
+                 save_cluster_embeddings(cluster_df, cluster_label, job_dir)
+            else:
+                 print("  Skipping embedding processing for empty cluster.")
+            # -----------------------------------------------------
+
+            processed_clusters_count += 1
+
+        except pd.errors.EmptyDataError:
+             print(f"  Warning: Cluster file {cluster_file.name} is empty. Skipping.")
+             all_analyses[f"cluster_{cluster_label}"] = "ANALYSIS SKIPPED: Cluster file was empty."
+        except KeyError:
+            print(f"  Error: Could not find index column when loading {cluster_file.name} with index_col=0. Was it saved correctly?")
+            all_analyses[f"cluster_{cluster_label}"] = f"ANALYSIS FAILED: Error reading index column."
+        except Exception as e:
+            print(f"Error processing Cluster {cluster_label} from {cluster_file.name}: {e}")
+            all_analyses[f"cluster_{cluster_label}"] = f"ANALYSIS FAILED: {e}"
+
+    # Save all analysis results to a single JSON file
+    summary_json_path = analysis_output_dir / "all_clusters_analysis.json"
+    try:
+        with open(summary_json_path, 'w') as f:
+            json.dump(all_analyses, f, indent=2)
+        print(f"\nSaved summary of all analyses to {summary_json_path}")
+    except Exception as e:
+        print(f"Error saving analysis summary JSON: {e}")
+
+    print(f"--- Cluster Analysis complete for job {job_dir.name}. Processed {processed_clusters_count}/{len(cluster_files)} clusters. --- ")
 
 if __name__ == "__main__":
-    main() 
+    # This script is not meant to be run directly anymore.
+    # It should be called by main.py which provides the job_dir.
+    print("This script should be called via main.py, not run directly.")
+    # Example for testing (requires creating dummy uploads/testjob/clusters):
+    # test_job_dir = Path("uploads") / "testjob"
+    # test_clusters_dir = test_job_dir / "clusters"
+    # test_clusters_dir.mkdir(exist_ok=True, parents=True)
+    # # Create dummy cluster CSVs for testing
+    # pd.DataFrame({'Unnamed: 0': [0], 'Resume_str': ['Test resume cluster 1']}).to_csv(test_clusters_dir / "cluster_1.csv")
+    # pd.DataFrame({'Unnamed: 0': [1], 'Resume_str': ['Test resume cluster 2']}).to_csv(test_clusters_dir / "cluster_2.csv", index=False) # Test without index
+    # # Create dummy embeddings NPY
+    # np.save(test_job_dir / "resume_embeddings.npy", np.random.rand(10, 10)) 
+    # main(job_dir=test_job_dir) 
